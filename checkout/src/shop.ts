@@ -88,17 +88,20 @@ export class Shop {
 
   private payment(chatId: number, o: Order, p: Product): Reply {
     const to = this.d.receivers[o.chain]!;
-    const token = o.chain === "solana" ? `USDC (SPL) <code>${SOL_USDC}</code>` : `USDC on Base <code>${BASE_USDC}</code>`;
+    const chain = CHAIN_NAME[o.chain];
+    const tokenId = o.chain === "solana" ? `USDC mint <code>${SOL_USDC}</code>` : `USDC contract <code>${BASE_USDC}</code>`;
     return {
       chatId,
       text: [
         `🧾 Order <code>${o.id}</code> · ${esc(p.name)}`,
         "",
-        `Send <b>exactly</b> <code>${fmtUsdc(o.amountMicro)}</code> USDC on <b>${CHAIN_NAME[o.chain]}</b>`,
-        `to <code>${to}</code>`,
-        token,
+        `<b>Amount:</b> <code>${fmtUsdc(o.amountMicro)}</code> USDC (exactly; don't round it)`,
+        `<b>Network:</b> ${chain}`,
+        `<b>Send to:</b> <code>${to}</code>`,
         "",
-        `The exact amount is how we match your payment, so please don't round it. It's held for you for ${Math.round((o.expiresAt - o.createdAt) / 60_000)} min (a late exact payment still counts).`,
+        `Only send USDC on ${chain}. To check your wallet picked real USDC, it's the token with ${tokenId}. That's the token's own address: <b>don't send to it</b>.`,
+        "",
+        `The exact amount is how we match your payment. This order holds it for ${Math.round((o.expiresAt - o.createdAt) / 60_000)} min (a late exact payment still counts). Started an order on the other network too? Just ignore that one; only the chain you pay on matters.`,
         `Payments are checked every ~${this.d.checkEveryMin} min; your license key arrives in this chat. /status to check.`,
       ].join("\n"),
       // no wallet deep-link button: Telegram buttons only take http(s)/tg links, not solana:/ethereum:

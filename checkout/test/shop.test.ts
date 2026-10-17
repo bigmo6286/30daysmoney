@@ -31,6 +31,11 @@ describe("telegram shop", () => {
     expect(out.replies[0]!.text).toContain((o.amountMicro / 1e6).toFixed(6));
     expect(out.replies[0]!.text).toContain(BASE);
     expect(out.replies[0]!.buttons).toBeUndefined(); // Telegram refuses non-http(s) button links
+    // one destination only: the receiver is the "Send to", the token's own address is flagged as not one
+    const text = out.replies[0]!.text;
+    expect(text).toMatch(new RegExp(`Send to:</b> <code>${BASE}</code>`));
+    expect(text.indexOf(BASE)).toBeLessThan(text.indexOf("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"));
+    expect(text).toContain("don't send to it");
     expect(chatOf(o)).toBe(42);
   });
 
