@@ -42,6 +42,28 @@ One-time setup (all in GitHub, a few minutes):
    - `SHOP_ENABLED` = `true`.
 4. **Settings → Pages → Source: GitHub Actions**, then run the `pages` workflow once (Actions tab). The store is at `https://<owner>.github.io/<repo>/`.
 
+### Reliable timing
+
+GitHub's own 5-minute schedule can take hours to start on a new workflow and skips runs under load. A free external cron fixes that by calling the workflow every 5 minutes through GitHub's API:
+
+1. **A token that can only start this repo's workflows.**
+   - Open github.com/settings/personal-access-tokens/new (fine-grained).
+   - Repository access: *Only select repositories* → this repo.
+   - Permissions → Repository → **Actions: Read and write**. Nothing else.
+2. **A job at cron-job.org** (free account) → Create cronjob:
+   - URL: `https://api.github.com/repos/<owner>/<repo>/actions/workflows/shop.yml/dispatches`
+   - Schedule: every 5 minutes.
+   - Advanced → Request method **POST**.
+   - Headers:
+     - `Authorization: Bearer <token>`
+     - `Accept: application/vnd.github+json`
+     - `X-GitHub-Api-Version: 2022-11-28`
+     - `Content-Type: application/json`
+   - Body: `{"ref":"main"}`
+   - A test run should answer **204**.
+
+GitHub's schedule can stay as a backup. The workflow's concurrency group means only one tick runs at a time, so two triggers never answer the same message twice.
+
 Notes:
 - **How long a key takes:** GitHub runs schedules every 5 minutes at best, and later under load. Buyers are told their key arrives within ~15 minutes.
 - **Where the state lives:** orders, buyer chat ids, keys and chain cursors are carried between runs in the Actions cache as one AES-256-GCM file. Its key is derived from `LICENSE_PRIVATE_KEY`, so workflows from forks, which can read caches but never get secrets, see only noise. A failed decrypt never overwrites the saved state.
