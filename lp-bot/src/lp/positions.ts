@@ -2,10 +2,14 @@
 import path from "node:path";
 import { readJson, writeJsonAtomic } from "../store";
 import type { RangeMode } from "../core/range";
+import type { V4Key } from "../chain/v4";
 
 export interface PositionRecord {
   id: string; // live: NFT tokenId · paper: "P<n>"
   kind: "live" | "paper";
+  /** absent = Uniswap v3; 4 = v4 (pool is then the pool id) */
+  version?: 4;
+  v4Key?: V4Key;
   pool: string;
   token: string;
   symbol: string;

@@ -17,6 +17,9 @@ import type { Settings } from "../config";
 import { PositionBook, type ClosedRecord, type PositionRecord } from "./positions";
 import { Native } from "./native";
 import { logger } from "../log";
+import { V4PositionManager, Position as V4Position } from "@uniswap/v4-sdk";
+import { encodeV4Swap, quoteV4, rememberV4Key, v4Of, v4PositionFees, V4_POSM_ABI } from "../chain/v4";
+import { ensurePermit2, v4Position, v4SdkPool } from "./v4";
 
 const log = logger("lp");
 const MAX_U128 = (1n << 128n) - 1n;
@@ -40,6 +43,8 @@ export interface OpenPlan {
 export interface PositionStatus {
   rec: PositionRecord;
   pool: PoolView;
+  /** current position liquidity (on-chain for live positions) */
+  liquidity: bigint;
   inRange: boolean;
   amountToken: bigint;
   amountQuote: bigint;
@@ -97,6 +102,12 @@ export class LpService {
     return best;
   }
 
+  /** Quote ETH ↔ the pool's token where this pool's positions trade: v3 best tier, or the v4 pool itself. */
+  async quoteFor(pool: PoolView, ethToToken: boolean, amountIn: bigint): Promise<{ fee: number; out: bigint }> {
+    if (pool.version === 4) return { fee: pool.fee, out: await quoteV4(this.chain, pool.v4Key!, ethToToken, amountIn) };
+    return ethToToken ? this.quote(this.c.weth, pool.token.address, amountIn) : this.quote(pool.token.address, this.c.weth, amountIn);
+  }
+
   rangeFor(pool: PoolView, mode: RangeMode, widthPct = this.settings().widthPct): Range {
     return computeRange(mode, {
       tick: pool.tick,
@@ -123,7 +134,7 @@ export class LpService {
       const share = tokenShareForRange(pool.tick, range, pool.quoteIsToken0);
       swapInWei = (amountWei * BigInt(Math.round(share * 1_000_000))) / 1_000_000n;
       if (swapInWei > 0n) {
-        swap = await this.quote(this.c.weth, pool.token.address, swapInWei);
+        swap = await this.quoteFor(pool, true, swapInWei);
         if (swap.out === 0n) throw new Error(`no swap route ETH → ${pool.token.symbol}`);
       }
     }
@@ -150,10 +161,17 @@ export class LpService {
       let tokenGot = 0n;
       if (mode === "inrange" && plan.swapInWei > 0n) {
         swapIn = plan.swapInWei;
-        const q = await this.quote(this.c.weth, token.address, swapIn);
+        const q = await this.quoteFor(plan.pool, true, swapIn);
         if (q.out === 0n) throw new Error(`no swap route ETH → ${token.symbol}`);
         if (this.paper) {
           tokenGot = q.out;
+        } else if (plan.pool.version === 4) {
+          const before = await erc20Balance(this.chain, token.address, this.chain.address);
+          const data = encodeV4Swap(plan.pool.v4Key!, true, swapIn, this.minOut(q.out), this.deadline());
+          const rc = await this.chain.send(`swap ETH→${token.symbol} (v4)`, { to: v4Of(this.chain).universalRouter, data, value: swapIn });
+          txs.push({ label: "swap", hash: rc.hash });
+          tokenGot = (await erc20Balance(this.chain, token.address, this.chain.address)) - before;
+          await ensurePermit2(this.chain, token.address, v4Of(this.chain).positionManager, tokenGot, txs);
         } else {
           const before = await erc20Balance(this.chain, token.address, this.chain.address);
           const data = routerIface.encodeFunctionData("exactInputSingle", [
@@ -168,17 +186,13 @@ export class LpService {
       const quoteForPosition = amountWei - swapIn;
       const pool = await readPoolView(this.chain, plan.pool.address);
       const range = this.rangeFor(pool, mode, widthPct);
-      const sdk = sdkPool(this.chain.cfg.chain.chainId, pool);
       const amt0 = pool.quoteIsToken0 ? quoteForPosition : tokenGot;
       const amt1 = pool.quoteIsToken0 ? tokenGot : quoteForPosition;
-      const position = Position.fromAmounts({
-        pool: sdk,
-        tickLower: range.tickLower,
-        tickUpper: range.tickUpper,
-        amount0: amt0.toString(),
-        amount1: amt1.toString(),
-        useFullPrecision: true,
-      });
+      const v4 = pool.version === 4 ? v4SdkPool(this.chain, pool) : null;
+      const fromAmounts = { tickLower: range.tickLower, tickUpper: range.tickUpper, amount0: amt0.toString(), amount1: amt1.toString(), useFullPrecision: true };
+      const position: Position | V4Position = v4
+        ? V4Position.fromAmounts({ pool: v4.pool, ...fromAmounts })
+        : Position.fromAmounts({ pool: sdkPool(this.chain.cfg.chain.chainId, pool), ...fromAmounts });
       if (JSBI.equal(position.liquidity, JSBI.BigInt(0))) throw new Error("amount too small for this range (liquidity 0)");
 
       let id: string;
@@ -191,8 +205,30 @@ export class LpService {
         const m = position.mintAmounts;
         used0 = BigInt(m.amount0.toString());
         used1 = BigInt(m.amount1.toString());
+      } else if (v4) {
+        const posm = v4Of(this.chain).positionManager;
+        const [ethBefore, tokBefore] = [await this.chain.nativeBalance(), await erc20Balance(this.chain, token.address, this.chain.address)];
+        const { calldata, value } = V4PositionManager.addCallParameters(position as V4Position, {
+          slippageTolerance: this.slippage(),
+          recipient: this.chain.address,
+          deadline: this.deadline(),
+          useNative: v4.native,
+        });
+        const rc = await this.chain.send(`mint ${token.symbol} (v4)`, { to: posm, data: calldata, value: BigInt(value) });
+        txs.push({ label: "mint", hash: rc.hash });
+        const iface = new ethers.Interface(V4_POSM_ABI);
+        const ev = rc.logs
+          .filter((l) => l.address.toLowerCase() === posm.toLowerCase())
+          .map((l) => { try { return iface.parseLog(l); } catch { return null; } })
+          .find((p) => p?.name === "Transfer" && p.args[0] === ethers.ZeroAddress);
+        if (!ev) throw new Error(`mint sent (${rc.hash}) but no position NFT was minted`);
+        id = BigInt(ev.args[2]).toString();
+        liquidity = BigInt(await new ethers.Contract(posm, V4_POSM_ABI, this.chain.provider).getFunction("getPositionLiquidity")(id));
+        // what actually left the wallet (the mint sweeps unused ETH back)
+        used0 = ethBefore - (await this.chain.nativeBalance()) - rc.gasUsed * (rc.gasPrice ?? 0n);
+        used1 = tokBefore - (await erc20Balance(this.chain, token.address, this.chain.address));
       } else {
-        const { calldata, value } = NonfungiblePositionManager.addCallParameters(position, {
+        const { calldata, value } = NonfungiblePositionManager.addCallParameters(position as Position, {
           slippageTolerance: this.slippage(),
           recipient: this.chain.address,
           deadline: this.deadline(),
@@ -215,6 +251,7 @@ export class LpService {
       const rec: PositionRecord = {
         id,
         kind: this.paper ? "paper" : "live",
+        ...(pool.version === 4 ? { version: 4 as const, v4Key: pool.v4Key } : {}),
         pool: pool.address,
         token: token.address,
         symbol: token.symbol,
@@ -271,11 +308,17 @@ export class LpService {
   }
 
   async status(rec: PositionRecord): Promise<PositionStatus> {
+    if (rec.v4Key) rememberV4Key(rec.v4Key);
     const pool = await readPoolView(this.chain, rec.pool);
     let liquidity = BigInt(rec.liquidity);
     let fee0: bigint;
     let fee1: bigint;
-    if (rec.kind === "live") {
+    if (rec.kind === "live" && pool.version === 4) {
+      const f = await v4PositionFees(this.chain, pool.address, rec.id, rec.tickLower, rec.tickUpper);
+      liquidity = f.liquidity;
+      fee0 = f.fee0;
+      fee1 = f.fee1;
+    } else if (rec.kind === "live") {
       const npm = new ethers.Contract(this.c.positionManager, NPM_ABI, this.chain.provider);
       const p = await npm.getFunction("positions")(rec.id);
       liquidity = BigInt(p.liquidity);
@@ -290,7 +333,10 @@ export class LpService {
       fee0 = BigInt(rec.paperFee0 ?? "0");
       fee1 = BigInt(rec.paperFee1 ?? "0");
     }
-    const pos = new Position({ pool: sdkPool(this.chain.cfg.chain.chainId, pool), liquidity: liquidity.toString(), tickLower: rec.tickLower, tickUpper: rec.tickUpper });
+    const pos =
+      pool.version === 4
+        ? v4Position(v4SdkPool(this.chain, pool).pool, liquidity, rec.tickLower, rec.tickUpper)
+        : new Position({ pool: sdkPool(this.chain.cfg.chain.chainId, pool), liquidity: liquidity.toString(), tickLower: rec.tickLower, tickUpper: rec.tickUpper });
     const a0 = BigInt(pos.amount0.quotient.toString());
     const a1 = BigInt(pos.amount1.quotient.toString());
     const amountQuote = pool.quoteIsToken0 ? a0 : a1;
@@ -309,7 +355,7 @@ export class LpService {
       priceQuotePerTokenE18: pool.priceE18,
       tokenDecimals: pool.token.decimals,
     });
-    return { rec, pool, inRange: isInRange(pool.tick, rec), amountToken, amountQuote, feeToken, feeQuote, pnl };
+    return { rec, pool, liquidity, inRange: isInRange(pool.tick, rec), amountToken, amountQuote, feeToken, feeQuote, pnl };
   }
 
   /** Claim fees without touching the position. Returns the fees valued in ETH. */
@@ -319,7 +365,17 @@ export class LpService {
       const st = await this.status(rec);
       const feesQuote = st.feeQuote + tokenToQuote(st.feeToken, st.pool.priceE18, st.pool.token.decimals);
       const txs: TxSummary[] = [];
-      if (rec.kind === "live") {
+      if (rec.kind === "live" && st.pool.version === 4) {
+        const { pool } = v4SdkPool(this.chain, st.pool);
+        const { calldata, value } = V4PositionManager.collectCallParameters(v4Position(pool, st.liquidity, rec.tickLower, rec.tickUpper), {
+          tokenId: rec.id,
+          recipient: this.chain.address,
+          slippageTolerance: this.slippage(),
+          deadline: this.deadline(),
+        });
+        const rc = await this.chain.send(`collect #${rec.id} (v4)`, { to: v4Of(this.chain).positionManager, data: calldata, value: BigInt(value) });
+        txs.push({ label: "collect", hash: rc.hash });
+      } else if (rec.kind === "live") {
         const { calldata, value } = NonfungiblePositionManager.collectCallParameters({
           tokenId: rec.id,
           ...this.expectedOwed(st),
@@ -363,6 +419,18 @@ export class LpService {
 
       if (rec.kind === "live") {
         const before = await erc20Balance(this.chain, rec.token, this.chain.address);
+        if (st.pool.version === 4) {
+          const { pool } = v4SdkPool(this.chain, st.pool);
+          const { calldata, value } = V4PositionManager.removeCallParameters(v4Position(pool, st.liquidity, rec.tickLower, rec.tickUpper), {
+            tokenId: rec.id,
+            liquidityPercentage: new Percent(1),
+            slippageTolerance: this.slippage(),
+            deadline: this.deadline(),
+            burnToken: true,
+          });
+          const rc = await this.chain.send(`close #${rec.id} (v4)`, { to: v4Of(this.chain).positionManager, data: calldata, value: BigInt(value) });
+          txs.push({ label: "close", hash: rc.hash });
+        } else {
         const sdk = sdkPool(this.chain.cfg.chain.chainId, st.pool);
         const npm = new ethers.Contract(this.c.positionManager, NPM_ABI, this.chain.provider);
         const onchain = await npm.getFunction("positions")(rec.id);
@@ -377,16 +445,17 @@ export class LpService {
         });
         const rc = await this.chain.send(`close #${rec.id}`, { to: this.c.positionManager, data: calldata, value: BigInt(value) });
         txs.push({ label: "close", hash: rc.hash });
+        }
         const bal = await erc20Balance(this.chain, rec.token, this.chain.address);
         // what the close returned + this position's leftover, never other tokens the wallet holds
         const got = bal - before + (leftover < before ? leftover : before);
         if (swapToEth && got > 0n) {
-          const out = await this.swapTokenToEth(rec.token, got, txs);
+          const out = await this.swapTokenToEth(rec.token, got, txs, st.pool);
           quoteTotal += out;
           tokenValue = 0n;
         }
       } else if (swapToEth && tokenTotal > 0n) {
-        const q = await this.quote(rec.token, this.c.weth, tokenTotal);
+        const q = await this.quoteFor(st.pool, false, tokenTotal);
         quoteTotal += q.out;
         tokenValue = 0n;
       }
@@ -417,11 +486,20 @@ export class LpService {
   }
 
   /** Must be called inside exclusive(). */
-  private async swapTokenToEth(token: string, amount: bigint, txs: TxSummary[]): Promise<bigint> {
-    const q = await this.quote(token, this.c.weth, amount);
+  private async swapTokenToEth(token: string, amount: bigint, txs: TxSummary[], pool?: PoolView): Promise<bigint> {
+    const q = pool ? await this.quoteFor(pool, false, amount) : await this.quote(token, this.c.weth, amount);
     if (q.out === 0n) {
       log.warn(`no route ${token} → ETH; keeping the token`);
       return 0n;
+    }
+    if (pool?.version === 4) {
+      // sell back into the same v4 pool; ETH arrives natively (no WETH to unwrap)
+      const ur = v4Of(this.chain).universalRouter;
+      await ensurePermit2(this.chain, token, ur, amount, txs);
+      const before = await this.chain.nativeBalance();
+      const rc = await this.chain.send("swap token→ETH (v4)", { to: ur, data: encodeV4Swap(pool.v4Key!, false, amount, this.minOut(q.out), this.deadline()) });
+      txs.push({ label: "swap", hash: rc.hash });
+      return (await this.chain.nativeBalance()) - before + rc.gasUsed * (rc.gasPrice ?? 0n);
     }
     await this.ensureAllowance(token, this.c.swapRouter02, amount, txs);
     const minOut = this.minOut(q.out);

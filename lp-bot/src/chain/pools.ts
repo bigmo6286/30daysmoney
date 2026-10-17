@@ -4,9 +4,14 @@ import { FACTORY_ABI, POOL_ABI } from "./abis";
 import type { Chain } from "./client";
 import { erc20Balance, sdkToken, tokenMeta, type TokenMeta } from "./tokens";
 import { priceE18FromSqrt } from "../core/pnl";
+import { findV4Pools, isPoolId, readV4PoolView, type V4Key } from "./v4";
 
 export interface PoolState {
+  /** v3: pool contract · v4: pool id (bytes32) */
   address: string;
+  /** absent = 3 */
+  version?: 4;
+  v4Key?: V4Key;
   fee: number;
   tickSpacing: number;
   token0: string;
@@ -56,6 +61,7 @@ export async function readPoolState(chain: Chain, address: string): Promise<Pool
 }
 
 export async function readPoolView(chain: Chain, address: string): Promise<PoolView> {
+  if (isPoolId(address)) return readV4PoolView(chain, address);
   const st = await readPoolState(chain, address);
   const weth = ethers.getAddress(chain.contracts.weth);
   const quoteIsToken0 = st.token0 === weth;
@@ -75,8 +81,13 @@ export async function readPoolView(chain: Chain, address: string): Promise<PoolV
   };
 }
 
-/** Every WETH pool for `token` across the configured fee tiers, deepest first. */
+/** Every ETH pool for `token`: v3 WETH pools and v4 native-ETH pools on the configured fee tiers, deepest first. */
 export async function findWethPools(chain: Chain, token: string, feeTiers: number[]): Promise<PoolView[]> {
+  const [v3, v4] = await Promise.all([findV3Pools(chain, token, feeTiers), findV4Pools(chain, token, feeTiers).catch(() => [])]);
+  return [...v3, ...v4].sort((a, b) => (b.quoteReserve > a.quoteReserve ? 1 : b.quoteReserve < a.quoteReserve ? -1 : 0));
+}
+
+async function findV3Pools(chain: Chain, token: string, feeTiers: number[]): Promise<PoolView[]> {
   const factory = new ethers.Contract(chain.contracts.factory, FACTORY_ABI, chain.provider);
   const addrs = await Promise.all(
     feeTiers.map((fee) =>
@@ -92,6 +103,7 @@ export async function findWethPools(chain: Chain, token: string, feeTiers: numbe
 }
 
 export function sdkPool(chainId: number, v: PoolView): Pool {
+  if (v.version === 4) throw new Error("sdkPool is v3 only");
   const t0 = sdkToken(chainId, v.quoteIsToken0 ? v.quote : v.token);
   const t1 = sdkToken(chainId, v.quoteIsToken0 ? v.token : v.quote);
   return new Pool(t0, t1, v.fee, v.sqrtPriceX96.toString(), v.liquidity.toString(), v.tick);
