@@ -10,6 +10,7 @@ import { PositionBook } from "./positions";
 import { Telegram } from "./bot/telegram";
 import { Handlers } from "./bot/handlers";
 import { logger } from "./log";
+import { BUY_URL, checkLicense, PRO_NAME } from "./license";
 
 const log = logger("main");
 
@@ -22,7 +23,9 @@ async function main() {
     // host only: RPC URLs often carry an API key in the path or query
     throw new Error(`RPC ${new URL(cfg.rpcUrl).host} unreachable: ${e instanceof Error ? e.message : e}`);
   });
-  const settings = new SettingsStore(cfg.dataDir);
+  const lic = checkLicense(cfg.licenseKey);
+  log.info(lic.pro ? `${PRO_NAME} · order ${lic.license.order}` : `free tier (${lic.reason}); Pro: ${BUY_URL}`);
+  const settings = new SettingsStore(cfg.dataDir, lic.pro);
   const jup = new Jupiter(cfg.jupiterKey);
   const pools = new SdkPools(sol);
   const exec = cfg.mode === "live" ? new LiveExecutor(sol, pools, jup) : new PaperExecutor(pools);
@@ -43,7 +46,7 @@ async function main() {
   const handlers = new Handlers(tg, agent, book, settings, { address: sol.address.toBase58(), balanceSol: () => sol.balanceSol() });
 
   log.info(`${cfg.mode.toUpperCase()} mode · wallet ${sol.address.toBase58()} · screener ${screener ? `jev (${cfg.jevModel})` : "none"}`);
-  await tg.send(`🤖 DLMM Agent online · <b>${cfg.mode.toUpperCase()}</b>`).catch((e) => log.warn(`startup message failed: ${e.message}`));
+  await tg.send(`🤖 DLMM Agent online · <b>${cfg.mode.toUpperCase()}</b> · ${lic.pro ? "Pro" : `free tier (Pro: ${BUY_URL})`}`).catch((e) => log.warn(`startup message failed: ${e.message}`));
   agent.start();
 
   const shutdown = () => {

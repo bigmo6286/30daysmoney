@@ -10,6 +10,7 @@ import { Autopilot } from "./auto/autopilot";
 import { CachedScreener } from "./auto/screen";
 import { JevScreener } from "./auto/jev";
 import { logger } from "./log";
+import { BUY_URL, checkLicense, PRO_NAME } from "./license";
 
 const log = logger("main");
 
@@ -20,7 +21,9 @@ async function main() {
   if (Number(net.chainId) !== cfg.chain.chainId) {
     throw new Error(`RPC is chain ${net.chainId}, expected ${cfg.chain.chainId} (${cfg.chain.name})`);
   }
-  const settings = new SettingsStore(cfg.dataDir);
+  const lic = checkLicense(cfg.licenseKey);
+  log.info(lic.pro ? `${PRO_NAME} · order ${lic.license.order}` : `free tier (${lic.reason}); Pro: ${BUY_URL}`);
+  const settings = new SettingsStore(cfg.dataDir, lic.pro);
   const lp = new LpService(chain, new PositionBook(cfg.dataDir), () => settings.value, cfg.mode === "paper");
   const tg = new Telegram(cfg.tgToken, cfg.tgOwnerId);
   const scanner = new Scanner(chain, () => settings.value, cfg.dataDir);
@@ -30,7 +33,7 @@ async function main() {
   const monitor = new Monitor(lp, tg, handlers);
 
   log.info(`${cfg.mode.toUpperCase()} mode · ${cfg.chain.name} · wallet ${chain.address} · screener ${screener ? `jev (${cfg.jevModel})` : "none"}`);
-  await tg.send(`🤖 LP Bot online · <b>${cfg.mode.toUpperCase()}</b> · ${cfg.chain.name}`).catch((e) => log.warn(`startup message failed: ${e.message}`));
+  await tg.send(`🤖 LP Bot online · <b>${cfg.mode.toUpperCase()}</b> · ${cfg.chain.name} · ${lic.pro ? "Pro" : `free tier (Pro: ${BUY_URL})`}`).catch((e) => log.warn(`startup message failed: ${e.message}`));
   monitor.start();
   auto.start();
 
