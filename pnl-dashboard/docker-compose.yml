@@ -1,0 +1,26 @@
+# Dashboard + Caddy (HTTPS). Mount the bots' data folders read-only.
+services:
+  pnl-dashboard:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      LPBOT_DATA: /bots/lp-bot
+      DLMM_DATA: /bots/dlmm-agent
+    volumes:
+      - pnl-data:/app/data
+      - ${LPBOT_DATA_HOST:-../lp-bot/data}:/bots/lp-bot:ro
+      - ${DLMM_DATA_HOST:-../dlmm-agent/data}:/bots/dlmm-agent:ro
+    expose: ["8790"]
+  caddy:
+    image: caddy:2.8.4-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    command: caddy reverse-proxy --from ${DOMAIN:?set DOMAIN=pnl.example.com in .env} --to pnl-dashboard:8790
+    volumes:
+      - caddy-data:/data
+
+volumes:
+  pnl-data:
+  caddy-data:

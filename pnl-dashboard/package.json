@@ -1,0 +1,34 @@
+{
+  "name": "pnl-dashboard",
+  "version": "0.1.0",
+  "description": "Self-hosted LP PnL dashboard: our bots' books plus any wallet's Uniswap v3 (EVM) and Meteora DLMM (Solana) positions",
+  "type": "module",
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env --import tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run test/unit",
+    "test:integration": "vitest run test/integration"
+  },
+  "dependencies": {
+    "@meteora-ag/dlmm": "^1.9.14",
+    "@solana/web3.js": "^1.98.4",
+    "@uniswap/sdk-core": "^7.19.4",
+    "@uniswap/v3-sdk": "^3.31.5",
+    "bn.js": "^5.2.1",
+    "ethers": "^6.17.0",
+    "jsbi": "^3.2.5",
+    "tsx": "^4.23.15",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/bn.js": "^5.2.0",
+    "@types/node": "^22.18.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
