@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>30daysmoney bots</title>
+<meta name="description" content="Self-hosted liquidity bots for Uniswap v3 and Meteora DLMM. Paper mode first, your keys stay on your server. Pay in USDC.">
+<style>
+:root {
+  --bg: #f7f7f5; --panel: #ffffff; --ink: #16181d; --muted: #5d6470; --line: #e3e4e8;
+  --accent: #2f6df6; --accent-ink: #ffffff; --ok: #138a52; --warn: #a3620b;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f1115; --panel: #171a21; --ink: #eceef2; --muted: #9aa3b2; --line: #2a2f3a; --accent: #6d97ff; --accent-ink: #0f1115; --ok: #4cc38a; --warn: #e2a64b; }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 980px; margin: 0 auto; padding: 40px 16px 64px; }
+h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.15; margin: 0 0 12px; letter-spacing: -0.02em; }
+.lead { color: var(--muted); max-width: 640px; margin: 0 0 28px; }
+.points { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0 0 32px; padding: 0; list-style: none; color: var(--muted); font-size: 14px; }
+.points li::before { content: "✓ "; color: var(--ok); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+.card h2 { font-size: 18px; margin: 0; }
+.card p { margin: 0; color: var(--muted); font-size: 14px; flex: 1; }
+.price { font-size: 24px; font-weight: 650; }
+.price small { font-size: 13px; color: var(--muted); font-weight: 500; }
+button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 10px 14px; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button:disabled { opacity: .6; cursor: default; }
+.fine { color: var(--muted); font-size: 13px; margin-top: 36px; max-width: 720px; }
+dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--ink); padding: 0; width: min(520px, calc(100vw - 32px)); }
+dialog::backdrop { background: rgba(0,0,0,.45); }
+.dlg { padding: 22px; display: flex; flex-direction: column; gap: 14px; }
+.dlg h3 { margin: 0; font-size: 19px; }
+label { font-size: 14px; color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
+input, select { font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.row { display: flex; gap: 8px; align-items: center; }
+.row { align-items: stretch; }
+.row > * { flex: 1; }
+.box { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--bg); }
+.k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; overflow-wrap: anywhere; }
+.big { font-size: 22px; font-weight: 650; }
+.copy { flex: 0 0 auto; padding: 6px 10px; font-size: 13px; }
+.status { font-size: 14px; }
+.status.ok { color: var(--ok); }
+.status.warn { color: var(--warn); }
+.err { color: var(--warn); font-size: 14px; min-height: 1em; }
+a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Liquidity bots you run yourself</h1>
+  <p class="lead">Telegram-controlled bots for Uniswap v3 (Robinhood Chain, Base, Arbitrum) and Meteora DLMM (Solana). They start in paper mode, simulate every transaction before sending it, and run on your server with your keys. We never hold your funds.</p>
+  <ul class="points">
+    <li>Paper mode by default</li><li>Simulated before sent</li><li>Stop loss on by default</li><li>Token screening</li><li>Pay once in USDC</li>
+  </ul>
+  <div class="grid" id="products"><p class="lead">Loading…</p></div>
+  <p class="fine">This is software, not an investment product. Providing liquidity can lose money, especially on volatile tokens; past fees don't predict future ones. You run the bot, you hold the keys, you decide what it trades. Payments are USDC sent directly from your wallet to ours on Solana or Base; send the exact amount shown so we can match it to your order.</p>
+</main>
+
+<dialog id="dlg">
+  <form class="dlg" id="order-form" method="dialog">
+    <h3 id="dlg-title">Checkout</h3>
+    <label>Pay with
+      <select id="chain"></select>
+    </label>
+    <label>Your Telegram @handle or email (so we can deliver)
+      <input id="contact" maxlength="100" required autocomplete="email" placeholder="@yourhandle">
+    </label>
+    <div class="err" id="err"></div>
+    <div class="row"><button type="button" id="cancel">Cancel</button><button class="primary" id="create" type="submit">Get payment details</button></div>
+  </form>
+  <div class="dlg" id="pay" hidden>
+    <h3 id="pay-title">Send USDC</h3>
+    <div class="box"><div class="k">Exact amount (USDC)</div><div class="row"><div class="v big" id="amount"></div><button class="copy" data-copy="amount">Copy</button></div></div>
+    <div class="box"><div class="k" id="to-label">To</div><div class="row"><div class="v" id="receiver"></div><button class="copy" data-copy="receiver">Copy</button></div></div>
+    <div class="box"><div class="k">Token</div><div class="v" id="token"></div></div>
+    <a id="paylink" href="#">Open in wallet</a>
+    <div class="status" id="status">Waiting for your payment…</div>
+    <div id="done" hidden class="box"><div class="k">License key</div><div class="v" id="license"></div><p id="deliver"></p></div>
+    <div class="k" id="orderid"></div>
+    <button type="button" id="close">Close</button>
+  </div>
+</dialog>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const usd = (n) => "$" + n.toFixed(n % 1 ? 2 : 0);
+  const names = { solana: "Solana", base: "Base" };
+  let product = null, poll = null, cfg = { chains: [], contact: "" };
+
+  const card = (p) => {
+    const el = document.createElement("div");
+    el.className = "card";
+    el.innerHTML = `<h2></h2><p></p><div class="price"></div><button class="primary">Buy with USDC</button>`;
+    el.querySelector("h2").textContent = p.name;
+    el.querySelector("p").textContent = p.blurb;
+    el.querySelector(".price").innerHTML = `${usd(p.priceUsd)} <small>USDC, one-time</small>`;
+    el.querySelector("button").onclick = () => open(p);
+    return el;
+  };
+
+  const open = (p) => {
+    product = p;
+    $("dlg-title").textContent = `${p.name} · ${usd(p.priceUsd)}`;
+    $("order-form").hidden = false; $("pay").hidden = true; $("err").textContent = "";
+    $("dlg").showModal();
+  };
+
+  const render = (o) => {
+    $("pay-title").textContent = `Send USDC on ${names[o.chain]}`;
+    $("amount").textContent = o.amount;
+    $("receiver").textContent = o.receiver;
+    $("to-label").textContent = o.chain === "solana" ? "To (Solana wallet)" : "To (Base address)";
+    $("token").textContent = (o.chain === "solana" ? "USDC (SPL) " : "USDC on Base ") + o.token;
+    $("paylink").href = o.payUrl;
+    $("orderid").textContent = "Order " + o.id;
+    const s = $("status");
+    if (o.status === "paid") {
+      s.textContent = "✓ Payment received. Thank you!"; s.className = "status ok";
+      $("done").hidden = false; $("license").textContent = o.license || "(issuing…)";
+      $("deliver").textContent = (o.deliver || "") + (o.contact ? " Contact: " + o.contact : "");
+      if (o.license) clearInterval(poll);
+    } else if (o.status === "expired") {
+      s.textContent = "This order expired. If you already paid the exact amount, it will still be matched; otherwise start a new order."; s.className = "status warn";
+    } else {
+      const m = Math.max(0, Math.round((o.expiresAt - Date.now()) / 60000));
+      s.textContent = `Waiting for your payment… (order holds this amount for ${m} min)`; s.className = "status";
+    }
+  };
+
+  $("order-form").onsubmit = async (e) => {
+    e.preventDefault();
+    $("create").disabled = true; $("err").textContent = "";
+    try {
+      const r = await fetch("/api/orders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ product: product.id, chain: $("chain").value, contact: $("contact").value }) });
+      const o = await r.json();
+      if (!r.ok) throw new Error(o.error || "could not create order");
+      try { localStorage.setItem("last-order", o.id); } catch {}
+      $("order-form").hidden = true; $("pay").hidden = false; $("done").hidden = true;
+      render(o);
+      clearInterval(poll);
+      poll = setInterval(async () => { try { const r2 = await fetch("/api/orders/" + o.id); if (r2.ok) render(await r2.json()); } catch {} }, 5000);
+    } catch (err) { $("err").textContent = err.message; }
+    finally { $("create").disabled = false; }
+  };
+  $("cancel").onclick = () => $("dlg").close();
+  $("close").onclick = () => { clearInterval(poll); $("dlg").close(); };
+  document.querySelectorAll("[data-copy]").forEach((b) => b.onclick = async () => {
+    try { await navigator.clipboard.writeText($(b.dataset.copy).textContent); b.textContent = "Copied"; setTimeout(() => b.textContent = "Copy", 1200); } catch {}
+  });
+
+  fetch("/api/products").then((r) => r.json()).then((d) => {
+    cfg = d;
+    $("chain").innerHTML = "";
+    for (const c of d.chains) { const o = document.createElement("option"); o.value = c; o.textContent = "USDC on " + names[c]; $("chain").append(o); }
+    const g = $("products"); g.innerHTML = "";
+    d.products.forEach((p) => g.append(card(p)));
+  }).catch(() => { $("products").textContent = "Could not load products. Refresh to try again."; });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+name: checkout
+on:
+  push:
+    paths: ["checkout/**", ".github/workflows/checkout.yml"]
+  pull_request:
+    paths: ["checkout/**", ".github/workflows/checkout.yml"]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: checkout
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: checkout/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test

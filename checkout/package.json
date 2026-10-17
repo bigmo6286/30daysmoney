@@ -1,0 +1,28 @@
+{
+  "name": "checkout",
+  "version": "0.1.0",
+  "description": "USDC checkout for our bots: landing page, unique-amount orders, on-chain payment watcher (Solana + Base), signed license keys. Never holds keys or funds.",
+  "type": "module",
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env --import tsx src/index.ts",
+    "keygen": "node --import tsx src/keygen.ts",
+    "ledger": "node --env-file-if-exists=.env --import tsx src/ledger.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.98.4",
+    "tsx": "^4.20.6",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

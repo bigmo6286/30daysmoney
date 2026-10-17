@@ -1,0 +1,22 @@
+services:
+  checkout:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TRUST_PROXY: "1"
+    volumes:
+      - checkout-data:/app/data
+    # only Caddy talks to the app; Caddy gets the TLS certificate for your domain
+    expose: ["8787"]
+  caddy:
+    image: caddy:2.8.4-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    command: caddy reverse-proxy --from ${DOMAIN:?set DOMAIN=pay.example.com in .env} --to checkout:8787
+    volumes:
+      - caddy-data:/data
+
+volumes:
+  checkout-data:
+  caddy-data:
