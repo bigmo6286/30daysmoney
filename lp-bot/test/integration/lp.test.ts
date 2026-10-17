@@ -22,7 +22,7 @@ function service(mode: "live" | "paper", sub: string) {
     CHAIN_ID: "31337",
     RPC_URL: env.rpcUrl,
     WALLET_KEY: BOT_KEY,
-    TG_TOKEN: "test",
+    TG_TOKEN: "123456:test-token-test-token-test-token-xx",
     TG_OWNER_ID: "1",
     DATA_DIR: dataDir,
     V3_FACTORY: env.contracts.factory,

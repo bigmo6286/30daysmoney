@@ -64,6 +64,7 @@ describe("format", () => {
     expect(eth(1234567n * 10n ** 12n)).toBe("1.23456");
     expect(eth(-E18 / 2n)).toBe("-0.5");
     expect(signedEth(E18 / 4n)).toBe("+0.25");
+    expect(eth(-1n)).toBe("0");
   });
   it("misc", () => {
     expect(price(0.00000123)).toBe("1.230e-6");

@@ -6,7 +6,8 @@ export function eth(wei: bigint, dp = 5): string {
   const abs = neg ? -wei : wei;
   const whole = abs / 10n ** 18n;
   const frac = (abs % 10n ** 18n).toString().padStart(18, "0").slice(0, dp).replace(/0+$/, "");
-  return `${neg ? "-" : ""}${whole}${frac ? "." + frac : ""}`;
+  const body = `${whole}${frac ? "." + frac : ""}`;
+  return neg && body !== "0" ? `-${body}` : body; // dust below `dp` decimals shows as 0, not -0
 }
 
 export function signedEth(wei: bigint, dp = 5): string {

@@ -89,7 +89,8 @@ export function loadConfig(e: NodeJS.ProcessEnv = process.env): AppConfig {
   const tgToken = (e.TG_TOKEN || "").trim();
   const tgOwnerId = (e.TG_OWNER_ID || "").trim();
   if (!tgToken) throw new Error("TG_TOKEN is required (create a bot with @BotFather)");
-  if (!/^-?\d+$/.test(tgOwnerId)) throw new Error("TG_OWNER_ID is required: your numeric Telegram id (ask @userinfobot)");
+  if (!/^\d+:[\w-]{30,}$/.test(tgToken)) throw new Error("TG_TOKEN doesn't look like a BotFather token (digits:letters). Remove any quotes or <> around it.");
+  if (!/^-?\d+$/.test(tgOwnerId)) throw new Error("TG_OWNER_ID must be your numeric Telegram id (ask @userinfobot), without quotes or <>");
   return {
     mode,
     chain,
