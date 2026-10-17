@@ -64,6 +64,19 @@ export function poolIdOf(k: V4Key): string {
 
 export const isPoolId = (s: string) => /^0x[0-9a-fA-F]{64}$/.test(s);
 
+/**
+ * Depth of a native-ETH v4 pool: the ETH it takes to push the token price 10% at the current
+ * liquidity, Δx = L·(1/√P − 1/√(1.1·P)). A v4 pool has no balance of its own to read, and the
+ * whole virtual reserve (L/√P) is useless as a gate: liquidity packed into a narrow range makes it
+ * astronomically large. This still assumes L holds over the band; the round-trip quote is the
+ * real check on price impact.
+ */
+export function v4Depth(liquidity: bigint, sqrtPriceX96: bigint): bigint {
+  if (sqrtPriceX96 === 0n) return 0n;
+  const virtual = (liquidity << 96n) / sqrtPriceX96;
+  return (virtual * 4654n) / 100_000n; // 1 − 1/√1.1 = 0.04654
+}
+
 export function v4Of(chain: Chain): V4Contracts {
   const v4 = chain.cfg.chain.v4;
   if (!v4) throw new Error(`Uniswap v4 is not configured for ${chain.cfg.chain.name}`);
@@ -131,8 +144,7 @@ export async function readV4PoolView(chain: Chain, idOrKey: string | V4Key): Pro
     quote,
     quoteIsToken0: true,
     priceE18: priceE18FromSqrt(sqrtPriceX96, true, token.decimals, 18),
-    // v4 has no per-pool balance: the ETH side of the active liquidity (x = L / √P) as depth
-    quoteReserve: (L << 96n) / sqrtPriceX96,
+    quoteReserve: v4Depth(L, sqrtPriceX96),
   };
 }
 

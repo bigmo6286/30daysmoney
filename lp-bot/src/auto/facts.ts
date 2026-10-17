@@ -3,6 +3,7 @@
  * a screener (e.g. Jev) judges what they mean. Nothing here decides on its own.
  */
 import { ethers } from "ethers";
+import { isPoolId } from "../chain/v4";
 import type { Chain } from "../chain/client";
 
 /** Admin functions that let a deployer take value from holders after launch. */
@@ -55,6 +56,8 @@ const call = async <T>(c: ethers.Contract, fn: string, ...args: unknown[]): Prom
 };
 
 export async function tokenFacts(chain: Chain, token: string, pool: string): Promise<TokenFacts> {
+  // a v4 pool holds no balance of its own: the PoolManager holds every v4 pool's tokens
+  if (isPoolId(pool)) pool = chain.cfg.chain.v4?.poolManager ?? ethers.ZeroAddress;
   const c = new ethers.Contract(
     token,
     [

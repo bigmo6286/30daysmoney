@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { startEnv, BOT_KEY, type TestEnv } from "./env";
+import { ethers } from "ethers";
+import { startEnv, BOT_KEY, DEPLOYER_KEY, type TestEnv } from "./env";
+import { compileTestContracts } from "./contracts";
 import { loadConfig, SettingsStore } from "../../src/config";
 import { Chain } from "../../src/chain/client";
 import { PositionBook } from "../../src/lp/positions";
@@ -61,6 +63,12 @@ describe("scanner + autopilot", () => {
   it("discovers active pools from swaps, measures yield, auto-opens, then rotates out", async () => {
     const screen = fakeScreener();
     const { lp, settings, scanner, auto, sent } = setup("auto", screen.s);
+    // a non-pool contract emitting a Swap-shaped log must be skipped, not abort the index
+    const deployer = new ethers.Wallet(DEPLOYER_KEY, env.provider);
+    const spamArt = compileTestContracts().SwapSpam;
+    const spam = await new ethers.ContractFactory(spamArt.abi, spamArt.bytecode, deployer).deploy();
+    await spam.waitForDeployment();
+    await (await (spam as ethers.Contract).getFunction("spam")()).wait();
     await churn();
     await scanner.scan();
     expect(scanner.indexedCount).toBe(2);

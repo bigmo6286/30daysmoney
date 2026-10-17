@@ -15,6 +15,7 @@ import { readJson, writeJsonAtomic } from "../store";
 import { esc, eth, feeTier, pct, signedEth } from "../core/format";
 import { shortErr } from "../chain/client";
 import { logger } from "../log";
+import { readPoolView } from "../chain/pools";
 
 const log = logger("auto");
 const pct0 = (p: number) => `${(p * 100).toFixed(0)}%`;
@@ -125,9 +126,11 @@ export class Autopilot {
 
   /** Round-trip quote: buy then sell back. Catches pools you can buy into but not get out of. */
   async roundTrip(c: Candidate, sizeWei: bigint): Promise<GateResult> {
-    const buy = await this.lp.quote(this.lp.chain.contracts.weth, c.token, sizeWei);
+    // through the pool the position would trade in (v4 positions buy and sell in their own pool)
+    const pool = await readPoolView(this.lp.chain, c.pool);
+    const buy = await this.lp.quoteFor(pool, true, sizeWei);
     if (buy.out === 0n) return { ok: false, reason: "no buy route" };
-    const sell = await this.lp.quote(c.token, this.lp.chain.contracts.weth, buy.out);
+    const sell = await this.lp.quoteFor(pool, false, buy.out);
     if (sell.out === 0n) return { ok: false, reason: "cannot sell (honeypot?)" };
     const ratio = Number((sell.out * 10_000n) / sizeWei) / 10_000;
     const expected = (1 - buy.fee / 1e6) * (1 - sell.fee / 1e6);

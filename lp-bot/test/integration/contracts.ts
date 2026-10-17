@@ -59,9 +59,16 @@ contract TestToken {
     }
     function _move(address f, address to, uint256 v) internal { require(balanceOf[f] >= v, "balance"); balanceOf[f] -= v; balanceOf[to] += v; emit Transfer(f, to, v); }
 }
+
+/// Emits a Uniswap v3-shaped Swap event but is no pool; its fallback answers every call with empty data.
+contract SwapSpam {
+    event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick);
+    function spam() external { emit Swap(msg.sender, msg.sender, 1, -1, 1, 1, 0); }
+    fallback() external {}
+}
 `;
 
-export function compileTestContracts(): Record<"WETH9" | "TestToken", { abi: any[]; bytecode: string }> {
+export function compileTestContracts(): Record<"WETH9" | "TestToken" | "SwapSpam", { abi: any[]; bytecode: string }> {
   const input = {
     language: "Solidity",
     sources: { "T.sol": { content: SOURCE } },
@@ -71,5 +78,5 @@ export function compileTestContracts(): Record<"WETH9" | "TestToken", { abi: any
   const errs = (out.errors ?? []).filter((e: any) => e.severity === "error");
   if (errs.length) throw new Error(errs.map((e: any) => e.formattedMessage).join("\n"));
   const get = (n: string) => ({ abi: out.contracts["T.sol"][n].abi, bytecode: "0x" + out.contracts["T.sol"][n].evm.bytecode.object });
-  return { WETH9: get("WETH9"), TestToken: get("TestToken") };
+  return { WETH9: get("WETH9"), TestToken: get("TestToken"), SwapSpam: get("SwapSpam") };
 }
