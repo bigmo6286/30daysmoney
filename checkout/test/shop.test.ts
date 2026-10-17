@@ -7,7 +7,7 @@ import { DEFAULT_PRODUCTS } from "../src/config";
 import { chatOf, Shop, tgContact, type Update } from "../src/shop";
 import { open, packDir, seal, stateKey, unpackDir } from "../src/statebox";
 import { renderStore } from "../src/site";
-import { generateKeys, issue } from "../src/license";
+import { generateKeys, issue, issueFor, payloadFor, readPayload, verify } from "../src/license";
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "shop-"));
 const SOL = "4Re3Gxt3bJNQmptr9YyFS3CTeHKoSS4S58NvyjhU4XsH";
@@ -153,5 +153,79 @@ describe("paid guide", () => {
     const s = JSON.parse(committed);
     expect(s.v).toBe(1);
     for (const word of ["Morpho", "flash", "Uniswap", "<h1>"]) expect(committed).not.toContain(word);
+  });
+});
+
+describe("subscriptions", () => {
+  const DAY = 86_400_000;
+  const now = 1_800_000_000_000;
+  const o = { id: "o2", product: "pnl-pro", contact: "tg:42 @buyer" };
+
+  it("a 30-day product expires 30 days after payment; lifetime and bots never do", () => {
+    expect(payloadFor(o, 30, [], now)).toEqual({ order: "o2", product: "pnl-pro", contact: "tg:42 @buyer", issued: now, expires: now + 30 * DAY });
+    expect(payloadFor({ ...o, product: "pnl-lifetime" }, undefined, [], now).expires).toBeUndefined();
+  });
+
+  it("renewing early adds on to the running key; an expired one or another product doesn't count", () => {
+    const k = generateKeys();
+    const running = issue({ order: "o1", product: "pnl-pro", contact: "tg:42", issued: now - 20 * DAY, expires: now + 10 * DAY }, k.privateKey);
+    const lapsed = issue({ order: "o0", product: "pnl-pro", contact: "tg:42", issued: now - 90 * DAY, expires: now - 60 * DAY }, k.privateKey);
+    const other = issue({ order: "o9", product: "lp-bot", contact: "tg:42", issued: now }, k.privateKey);
+    expect(payloadFor(o, 30, [running, lapsed, other], now).expires).toBe(now + 40 * DAY);
+    expect(payloadFor(o, 30, [lapsed, other], now).expires).toBe(now + 30 * DAY);
+  });
+
+  it("issueFor matches the buyer by Telegram chat (handles change), and signs a verifiable key", () => {
+    const k = generateKeys();
+    const paid = (id: string, contact: string, license?: string) => ({ id, product: "pnl-pro", chain: "base" as const, amountMicro: 1, contact, createdAt: 0, expiresAt: 0, status: "paid" as const, license });
+    const first = issue({ order: "a", product: "pnl-pro", contact: "tg:42 @old", issued: now, expires: now + 5 * DAY }, k.privateKey);
+    const stranger = issue({ order: "b", product: "pnl-pro", contact: "tg:7 @x", issued: now, expires: now + 25 * DAY }, k.privateKey);
+    const me = paid("c", "tg:42 @new");
+    const key = issueFor(me, DEFAULT_PRODUCTS, [paid("a", "tg:42 @old", first), paid("b", "tg:7 @x", stranger), me], k.privateKey, now);
+    expect(verify(key, k.publicKey)).toMatchObject({ order: "c", product: "pnl-pro", expires: now + 35 * DAY });
+  });
+
+  it("the dashboard delivery says where to paste the key and until when; needs the store's address", async () => {
+    const { sellable } = await import("../src/shop");
+    const k = generateKeys();
+    const book = new OrderBook(tmp());
+    const s = new Shop({ book, products: DEFAULT_PRODUCTS, receivers: { base: BASE }, contact: "@seller", checkEveryMin: 5, storeUrl: "https://x.github.io/repo" });
+    s.handle(tap("c:pnl-pro:base", 11));
+    const ord = book.all()[0]!;
+    expect(ord.amountMicro).toBeGreaterThan(15_000_000);
+    book.match({ chain: "base", txid: "0xt", amountMicro: ord.amountMicro, from: "0xf", at: Date.now() });
+    book.setLicense(ord.id, issueFor(book.get(ord.id)!, DEFAULT_PRODUCTS, book.all(), k.privateKey, Date.UTC(2026, 9, 17)));
+    const text = s.delivery(book.get(ord.id)!)!.text;
+    expect(text).toContain("https://x.github.io/repo/dashboard/");
+    expect(text).toContain("Settings");
+    expect(text).toContain("Valid until <b>2026-11-16</b>");
+    expect(text).not.toContain("LICENSE_KEY");
+    expect(readPayload(book.get(ord.id)!.license!)?.product).toBe("pnl-pro");
+    expect(sellable(DEFAULT_PRODUCTS, true, false).map((p) => p.id)).not.toContain("pnl-pro");
+    expect(sellable(DEFAULT_PRODUCTS, true, true).map((p) => p.id)).toEqual(expect.arrayContaining(["pnl-pro", "pnl-lifetime"]));
+  });
+
+  it("reminds once, 3 days before the buyer's latest key runs out, with a renew button", () => {
+    const k = generateKeys();
+    const book = new OrderBook(tmp());
+    const s = new Shop({ book, products: DEFAULT_PRODUCTS, receivers: { base: BASE }, contact: "@seller", checkEveryMin: 5, storeUrl: "https://x.github.io/repo" });
+    const buy = (at: number) => {
+      s.handle(tap("c:pnl-pro:base", 11));
+      const o = book.all().at(-1)!;
+      book.match({ chain: "base", txid: `0x${o.id}`, amountMicro: o.amountMicro, from: "0xf", at: Date.now() });
+      book.setLicense(o.id, issueFor(book.get(o.id)!, DEFAULT_PRODUCTS, book.all(), k.privateKey, at));
+      return o;
+    };
+    const t0 = Date.now();
+    buy(t0);
+    expect(s.reminders(t0 + 20 * DAY)).toEqual([]);
+    const r = s.reminders(t0 + 28 * DAY);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ chatId: 11, buttons: [[{ data: "p:pnl-pro" }]] });
+    expect(r[0]!.text).toContain("runs out in 2 days");
+    expect(s.reminders(t0 + 29 * DAY)).toEqual([]); // once
+    buy(t0 + 29 * DAY); // renewed: the new key runs to day 60
+    expect(s.reminders(t0 + 50 * DAY)).toEqual([]);
+    expect(s.reminders(t0 + 58 * DAY)).toHaveLength(1);
   });
 });

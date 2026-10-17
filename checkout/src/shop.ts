@@ -9,6 +9,7 @@ import { fmtUsdc, type Chain, type Order, type OrderBook } from "./orders";
 import { BASE_USDC } from "./watch/base";
 import { SOL_USDC } from "./watch/solana";
 import { guideUrl } from "./guide";
+import { readPayload } from "./license";
 
 export interface Button {
   text: string;
@@ -36,14 +37,24 @@ export interface ShopDeps {
   contact: string;
   /** how often payments are checked, for the "your key arrives within…" line */
   checkEveryMin: number;
+  /** where the store lives (GitHub Pages), for {{STORE_URL}} in delivery text, e.g. the dashboard */
+  storeUrl?: string;
   /** paid guides: where the store lives and the key that opens them (GUIDE_KEY) */
   guide?: { storeUrl: string; key: string };
 }
 
 const GUIDE_TAG = /\{\{GUIDE_URL:([a-z0-9-]{1,40})\}\}/g;
+const STORE_TAG = /\{\{STORE_URL\}\}/g;
 
-/** Products whose delivery needs a guide key can only be sold when one is configured. */
-export const sellable = (products: Product[], guideConfigured: boolean) => products.filter((p) => guideConfigured || !/\{\{GUIDE_URL:/.test(p.deliver));
+/** Products whose delivery needs a guide key (or the store's address) can only be sold when it's configured. */
+export const sellable = (products: Product[], guideConfigured: boolean, storeConfigured = true) =>
+  products.filter((p) => (guideConfigured || !/\{\{GUIDE_URL:/.test(p.deliver)) && (storeConfigured || !/\{\{STORE_URL\}\}/.test(p.deliver)));
+
+const KEY_LINE: Record<NonNullable<Product["keyFor"]>, string> = {
+  bot: "Your license key: put it in the bot's <code>.env</code> as <code>LICENSE_KEY=</code> and restart. It also unlocks LP PnL Dashboard Pro.",
+  dashboard: "Your license key (paste it in the dashboard's Settings):",
+  none: "Your order key (keep it: it's your proof of purchase):",
+};
 
 const CHAIN_NAME: Record<Chain, string> = { solana: "Solana", base: "Base" };
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -110,7 +121,10 @@ export class Shop {
 
   private deliverText(t: string): string {
     const g = this.d.guide;
-    return t.replace(GUIDE_TAG, (_m, name: string) => (g ? guideUrl(g.storeUrl, name, g.key) : "(the seller will send your link)"));
+    const store = this.d.storeUrl ?? g?.storeUrl;
+    return t
+      .replace(GUIDE_TAG, (_m, name: string) => (g ? guideUrl(g.storeUrl, name, g.key) : "(the seller will send your link)"))
+      .replace(STORE_TAG, store ? store.replace(/\/?$/, "/") : "");
   }
 
   /** The message a buyer gets once paid (also re-sent by /status). */
@@ -118,13 +132,16 @@ export class Shop {
     const chatId = chatOf(o);
     if (chatId === null || o.status !== "paid" || !o.license) return null;
     const p = this.product(o.product);
+    const exp = readPayload(o.license)?.expires;
+    const until = exp ? new Date(exp).toISOString().slice(0, 10) : "";
     return {
       chatId,
       text: [
         `✅ Payment received for <b>${esc(p?.name ?? o.product)}</b> (order <code>${o.id}</code>). Thank you!`,
         "",
-        "Your license key: put it in the bot's <code>.env</code> as <code>LICENSE_KEY=</code> and restart.",
+        KEY_LINE[p?.keyFor ?? "bot"],
         `<code>${esc(o.license)}</code>`,
+        until ? `Valid until <b>${until}</b>.` : "",
         "",
         esc(this.deliverText(p?.deliver ?? "")),
         this.d.contact ? `Questions: ${esc(this.d.contact)}` : "",
@@ -132,6 +149,35 @@ export class Shop {
         .filter((l, i, a) => l || a[i - 1])
         .join("\n"),
     };
+  }
+
+  /**
+   * "Your subscription ends in N days" for each buyer whose latest key for a subscription runs
+   * out within `withinDays` (once per key). The button starts a renewal, which adds on.
+   */
+  reminders(now = Date.now(), withinDays = 3): Reply[] {
+    const out: Reply[] = [];
+    const latest = new Map<string, { o: Order; exp: number }>();
+    for (const o of this.d.book.all()) {
+      const exp = o.status === "paid" && o.license ? readPayload(o.license)?.expires : undefined;
+      const chatId = chatOf(o);
+      if (!exp || chatId === null) continue;
+      const k = `${chatId}|${o.product}`;
+      if (!latest.has(k) || latest.get(k)!.exp < exp) latest.set(k, { o, exp });
+    }
+    for (const { o, exp } of latest.values()) {
+      if (o.reminded || exp < now || exp - now > withinDays * 86_400_000) continue;
+      const p = this.product(o.product);
+      if (!p) continue;
+      const days = Math.max(1, Math.ceil((exp - now) / 86_400_000));
+      this.d.book.setReminded(o.id, now);
+      out.push({
+        chatId: chatOf(o)!,
+        text: `⏳ Your <b>${esc(p.name)}</b> key runs out in ${days} day${days > 1 ? "s" : ""} (${new Date(exp).toISOString().slice(0, 10)}). Renew now and the new key adds ${p.days ?? 30} days on top: nothing is lost by renewing early.`,
+        buttons: [[{ text: `Renew · ${usd(p.priceUsd)}`, data: `p:${p.id}` }]],
+      });
+    }
+    return out;
   }
 
   private status(chatId: number): Reply[] {

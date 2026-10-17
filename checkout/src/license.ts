@@ -3,6 +3,8 @@
  * Anyone with the public key can verify a key offline; only the server can issue one.
  */
 import crypto from "node:crypto";
+import type { Product } from "./config";
+import type { Order } from "./orders";
 
 export interface LicensePayload {
   order: string;
@@ -10,6 +12,30 @@ export interface LicensePayload {
   contact: string;
   /** ms since epoch */
   issued: number;
+  /** ms since epoch; absent = never expires */
+  expires?: number;
+}
+
+const DAY_MS = 86_400_000;
+
+/** What a key says, without checking it (for keys we issued ourselves). */
+export function readPayload(license: string): LicensePayload | null {
+  try {
+    return JSON.parse(Buffer.from(license.split(".")[0] ?? "", "base64url").toString("utf8")) as LicensePayload;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The payload for a paid order. A subscription (`days`) runs from now, or from the end of the
+ * buyer's latest still-running key for the same product (`earlier`), so renewing early loses nothing.
+ */
+export function payloadFor(o: { id: string; product: string; contact: string }, days: number | undefined, earlier: string[] = [], now = Date.now()): LicensePayload {
+  const p: LicensePayload = { order: o.id, product: o.product, contact: o.contact, issued: now };
+  if (!days) return p;
+  const running = Math.max(now, ...earlier.map((k) => readPayload(k)).filter((e): e is LicensePayload => e?.product === o.product).map((e) => e.expires ?? 0));
+  return { ...p, expires: running + days * DAY_MS };
 }
 
 export function generateKeys(): { privateKey: string; publicKey: string } {
@@ -42,4 +68,13 @@ export function verify(license: string, publicKey: string): LicensePayload | nul
   } catch {
     return null;
   }
+}
+
+/** the buyer behind an order's contact: "tg:<chat> @handle" is the chat (handles change), else the contact as given */
+const buyerOf = (contact: string) => contact.split(" ")[0]!.toLowerCase();
+
+/** The license key for a paid order, extending the same buyer's running subscription if they have one. */
+export function issueFor(o: Order, products: Product[], orders: Order[], privateKey: string, now = Date.now()): string {
+  const earlier = orders.filter((x) => x.id !== o.id && x.license && x.product === o.product && buyerOf(x.contact) === buyerOf(o.contact)).map((x) => x.license!);
+  return issue(payloadFor(o, products.find((p) => p.id === o.product)?.days, earlier, now), privateKey);
 }

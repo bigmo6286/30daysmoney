@@ -8,7 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { loadConfig, loadProducts } from "./config";
 import { fmtUsdc, OrderBook, type Order, type Transfer } from "./orders";
-import { issue } from "./license";
+import { issueFor } from "./license";
 import { SolanaWatcher } from "./watch/solana";
 import { BaseWatcher } from "./watch/base";
 import { readJson, writeJsonAtomic } from "./store";
@@ -50,10 +50,10 @@ async function main() {
   const guideKey = (e.GUIDE_KEY || "").trim();
   const storeUrl = (e.STORE_URL || "").trim();
   const guide = guideKey && storeUrl ? { storeUrl, key: guideKey } : undefined;
-  const products = sellable(loadProducts(cfg.dataDir), !!guide);
+  const products = sellable(loadProducts(cfg.dataDir), !!guide, !!storeUrl);
   const book = new OrderBook(cfg.dataDir, cfg.orderTtlMin * 60_000);
   const receivers = { ...(cfg.solReceiver ? { solana: cfg.solReceiver } : {}), ...(cfg.baseReceiver ? { base: cfg.baseReceiver } : {}) };
-  const shop = new Shop({ book, products, receivers, contact: cfg.contact, checkEveryMin, guide });
+  const shop = new Shop({ book, products, receivers, contact: cfg.contact, checkEveryMin, guide, storeUrl: storeUrl || undefined });
   const stateFile = path.join(cfg.dataDir, "watchers.json");
   const st = readJson<{ solana?: { cursor?: string }; base?: { next?: number }; tgOffset?: number }>(stateFile, {});
   const save = (extra: object) => writeJsonAtomic(stateFile, { ...readJson(stateFile, {}), ...extra });
@@ -75,7 +75,7 @@ async function main() {
 
   // 2. payments
   const onPaid = async (o: Order) => {
-    book.setLicense(o.id, issue({ order: o.id, product: o.product, contact: o.contact, issued: Date.now() }, cfg.licenseKey));
+    book.setLicense(o.id, issueFor(o, products, book.all(), cfg.licenseKey));
     const paid = book.get(o.id)!;
     fs.appendFileSync(path.join(cfg.dataDir, "sales.csv"), `${new Date(paid.paid!.at).toISOString()},${paid.id},${paid.product},${paid.chain},${fmtUsdc(paid.amountMicro)},${paid.paid!.txid},${JSON.stringify(paid.contact)},${paid.ref ?? ""}\n`);
     log.info(`PAID ${paid.id} ${paid.product} ${fmtUsdc(paid.amountMicro)} USDC on ${paid.chain}`);
@@ -107,6 +107,9 @@ async function main() {
     save({ [name]: w.state });
   }
   book.expire();
+
+  // 3. subscriptions running out
+  for (const r of shop.reminders()) await tg.send(r).catch((err) => log.warn(`reminder: ${err.message}`));
 }
 
 main().catch((err) => {
