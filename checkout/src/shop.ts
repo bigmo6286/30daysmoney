@@ -8,6 +8,7 @@ import type { Product } from "./config";
 import { fmtUsdc, type Chain, type Order, type OrderBook } from "./orders";
 import { BASE_USDC } from "./watch/base";
 import { SOL_USDC } from "./watch/solana";
+import { guideUrl } from "./guide";
 
 export interface Button {
   text: string;
@@ -35,7 +36,14 @@ export interface ShopDeps {
   contact: string;
   /** how often payments are checked, for the "your key arrives within…" line */
   checkEveryMin: number;
+  /** paid guides: where the store lives and the key that opens them (GUIDE_KEY) */
+  guide?: { storeUrl: string; key: string };
 }
+
+const GUIDE_TAG = /\{\{GUIDE_URL:([a-z0-9-]{1,40})\}\}/g;
+
+/** Products whose delivery needs a guide key can only be sold when one is configured. */
+export const sellable = (products: Product[], guideConfigured: boolean) => products.filter((p) => guideConfigured || !/\{\{GUIDE_URL:/.test(p.deliver));
 
 const CHAIN_NAME: Record<Chain, string> = { solana: "Solana", base: "Base" };
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -97,6 +105,11 @@ export class Shop {
     };
   }
 
+  private deliverText(t: string): string {
+    const g = this.d.guide;
+    return t.replace(GUIDE_TAG, (_m, name: string) => (g ? guideUrl(g.storeUrl, name, g.key) : "(the seller will send your link)"));
+  }
+
   /** The message a buyer gets once paid (also re-sent by /status). */
   delivery(o: Order): Reply | null {
     const chatId = chatOf(o);
@@ -110,7 +123,7 @@ export class Shop {
         "Your license key: put it in the bot's <code>.env</code> as <code>LICENSE_KEY=</code> and restart.",
         `<code>${esc(o.license)}</code>`,
         "",
-        esc(p?.deliver ?? ""),
+        esc(this.deliverText(p?.deliver ?? "")),
         this.d.contact ? `Questions: ${esc(this.d.contact)}` : "",
       ]
         .filter((l, i, a) => l || a[i - 1])

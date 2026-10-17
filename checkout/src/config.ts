@@ -43,6 +43,13 @@ export const DEFAULT_PRODUCTS: Product[] = [
     blurb: "Everything in DLMM Agent Pro, installed and hardened on your own VPS. Your keys stay on your server.",
     deliver: "Message the contact below with your order id to book the setup; we reply within 12 hours. Your key also unlocks Pro.",
   },
+  {
+    id: "flash-guide",
+    name: "Flash-loan arbitrage guide",
+    priceUsd: 19,
+    blurb: "Build a flash-loan executor that can't be drained and reverts unless it profits: Morpho Blue + Uniswap v3 on Robinhood Chain, Base and Ethereum, with real sizing, gas and mainnet-fork numbers.",
+    deliver: "Read it here (bookmark it; the link is your copy): {{GUIDE_URL:flash-loans}}",
+  },
 ];
 
 export interface Config {

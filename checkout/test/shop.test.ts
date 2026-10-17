@@ -111,3 +111,42 @@ describe("store page", () => {
     expect(evil).not.toContain("</script><script>alert(1)");
   });
 });
+
+describe("paid guide", () => {
+  it("encrypts so the published file reveals nothing, decrypts with the key, refuses a wrong or tampered one", async () => {
+    const { newGuideKey, sealGuide, openGuide, renderGuide } = await import("../src/guide");
+    const key = newGuideKey();
+    const html = renderGuide("# Secret recipe\n\n| a | b |\n|---|---|\n| 1 | 2 |\n");
+    const s = sealGuide(html, key);
+    expect(JSON.stringify(s)).not.toContain("Secret");
+    expect(openGuide(s, key)).toBe(html);
+    expect(html).toContain("<table>");
+    expect(() => openGuide(s, newGuideKey())).toThrow();
+    const bad = Buffer.from(s.ct, "base64");
+    bad[3]! ^= 1;
+    expect(() => openGuide({ ...s, ct: bad.toString("base64") }, key)).toThrow();
+    expect(() => sealGuide("x", "short")).toThrow(/32 bytes/);
+  });
+
+  it("the buyer's delivery carries the reading link with the key in the #fragment; unsellable without a key", async () => {
+    const { sellable } = await import("../src/shop");
+    const book = new OrderBook(tmp());
+    const s = new Shop({ book, products: DEFAULT_PRODUCTS, receivers: { solana: SOL }, contact: "@seller", checkEveryMin: 5, guide: { storeUrl: "https://x.github.io/repo", key: "KEY_abc-123" } });
+    s.handle(tap("c:flash-guide:solana", 9));
+    const o = book.all()[0]!;
+    expect(o.amountMicro).toBeGreaterThan(19_000_000);
+    book.match({ chain: "solana", txid: "sig", amountMicro: o.amountMicro, from: "x", at: Date.now() });
+    book.setLicense(o.id, "LIC");
+    const d = s.delivery(book.get(o.id)!)!;
+    expect(d.text).toContain("https://x.github.io/repo/guide.html#g=flash-loans&amp;k=KEY_abc-123");
+    expect(sellable(DEFAULT_PRODUCTS, false).map((p) => p.id)).not.toContain("flash-guide");
+    expect(sellable(DEFAULT_PRODUCTS, true).map((p) => p.id)).toContain("flash-guide");
+  });
+
+  it("the committed guide is ciphertext only", () => {
+    const committed = fs.readFileSync(new URL("../public/guides/flash-loans.json", import.meta.url), "utf8");
+    const s = JSON.parse(committed);
+    expect(s.v).toBe(1);
+    for (const word of ["Morpho", "flash", "Uniswap", "<h1>"]) expect(committed).not.toContain(word);
+  });
+});

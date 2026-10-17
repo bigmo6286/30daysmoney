@@ -28,5 +28,13 @@ if (process.argv[1] && /site\.[jt]s$/.test(process.argv[1])) {
   });
   fs.mkdirSync(out, { recursive: true });
   fs.writeFileSync(path.join(out, "index.html"), html);
+  // paid guides: the reader page and the encrypted guides (never the plain text)
+  const pub = new URL("../public/", import.meta.url).pathname;
+  fs.copyFileSync(path.join(pub, "guide.html"), path.join(out, "guide.html"));
+  const guides = path.join(pub, "guides");
+  if (fs.existsSync(guides)) {
+    fs.mkdirSync(path.join(out, "guides"), { recursive: true });
+    for (const f of fs.readdirSync(guides)) if (f.endsWith(".json")) fs.copyFileSync(path.join(guides, f), path.join(out, "guides", f));
+  }
   console.log(`wrote ${path.join(out, "index.html")}`);
 }

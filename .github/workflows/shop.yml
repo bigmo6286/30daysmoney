@@ -72,6 +72,8 @@ jobs:
           BASE_RECEIVER: ${{ vars.BASE_RECEIVER }}
           CONTACT: ${{ vars.CONTACT }}
           CHECK_EVERY_MIN: "5"
+          GUIDE_KEY: ${{ secrets.GUIDE_KEY }}
+          STORE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
       # save even if the tick failed halfway (it records progress as it goes), but never after a
       # failed unpack: that would replace the real orders with an empty book
       - if: always() && steps.unpack.outcome == 'success'
