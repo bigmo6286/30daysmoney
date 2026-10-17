@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LP PnL dashboard</title>
+<meta name="description" content="Every Uniswap v3/v4 and Meteora DLMM position across your wallets in one view: value, unclaimed fees, range. Runs in your browser; no account, no keys.">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f4f2; --surface: #fcfcfb; --line: #e2e1dd; --ink: #0b0b0b; --ink-2: #52514e; --muted: #6f6e69;
+  --accent: #2a78d6; --good: #0b8a3e; --critical: #c93838; --pro: #6c4bd8;
+}
+@media (prefers-color-scheme: dark) {
+  :root { color-scheme: dark; --bg: #121211; --surface: #1a1a19; --line: #2e2e2b; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #9a998f; --accent: #3f8ee6; --good: #3bbf6f; --critical: #e66767; --pro: #9a84f0; }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; font-variant-numeric: tabular-nums; }
+main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 56px; }
+a { color: var(--accent); }
+header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.brand { display: flex; align-items: center; gap: 10px; }
+h1 { font-size: 21px; margin: 0; letter-spacing: -0.01em; }
+h2 { font-size: 15px; margin: 30px 0 10px; color: var(--ink-2); font-weight: 600; }
+h3 { font-size: 13px; margin: 18px 0 8px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.badge { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-2); background: var(--surface); }
+.badge.pro { color: var(--pro); border-color: color-mix(in oklab, var(--pro) 45%, var(--line)); }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+button, .btn { font: inherit; font-size: 14px; padding: 8px 14px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; text-decoration: none; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button:disabled { opacity: .5; cursor: default; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+form.add { display: flex; gap: 8px; flex-wrap: wrap; }
+form.add input[name=addr] { flex: 3 1 260px; }
+form.add input[name=label] { flex: 1 1 120px; }
+input { font: inherit; padding: 8px 11px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); min-width: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; padding: 3px 4px 3px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); }
+.chip button { border: 0; padding: 0 6px; font-size: 15px; line-height: 1; background: none; color: var(--muted); }
+.hint { font-size: 13px; color: var(--muted); margin-top: 8px; }
+.err { font-size: 13px; color: var(--critical); min-height: 1em; margin-top: 6px; }
+.meta { font-size: 13px; color: var(--muted); margin-top: 14px; }
+.warn { border: 1px solid var(--critical); border-radius: 9px; padding: 8px 12px; background: var(--surface); margin-top: 10px; font-size: 13px; overflow-wrap: anywhere; }
+.warn b { color: var(--critical); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.tile .k { font-size: 12px; color: var(--muted); }
+.tile .v { font-size: 23px; font-weight: 650; }
+.tile .s, .of { font-size: 12px; color: var(--ink-2); font-weight: 400; }
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--muted); font-weight: 500; }
+td.num, th.num { text-align: right; }
+tbody tr:last-child td { border-bottom: 0; }
+.note { font-size: 11px; color: var(--muted); white-space: normal; }
+.state { display: inline-flex; gap: 5px; align-items: center; }
+.state i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.state.ok i { background: var(--good); }
+.state.off i { background: var(--critical); }
+.empty { text-align: center; padding: 34px 16px; color: var(--ink-2); }
+.empty h2 { margin: 0 0 6px; color: var(--ink); font-size: 18px; }
+.locked { display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+figure.chart { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px 6px; }
+figcaption { font-size: 13px; color: var(--ink-2); font-weight: 600; }
+svg { width: 100%; height: auto; display: block; touch-action: pan-y; }
+svg .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+svg .dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+svg .grid { stroke: var(--line); stroke-width: 1; }
+svg .cross { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+svg .axis { fill: var(--muted); font-size: 11px; }
+svg .hit { fill: transparent; }
+#tip { position: fixed; pointer-events: none; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.14); z-index: 10; }
+dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); width: min(520px, calc(100vw - 32px)); padding: 0; }
+dialog::backdrop { background: rgba(0,0,0,.45); }
+dialog form { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+dialog label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--ink-2); }
+dialog .row { display: flex; gap: 8px; justify-content: flex-end; }
+footer { margin-top: 40px; font-size: 13px; color: var(--muted); max-width: 720px; }
+.muted { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="brand"><h1>LP PnL</h1><span class="badge" id="plan">Free</span></div>
+    <div class="actions">
+      <button id="refresh">Refresh</button>
+      <button id="csv">Export CSV</button>
+      <button id="open-settings">Settings</button>
+    </div>
+  </header>
+
+  <section class="panel">
+    <form class="add" id="add-form" autocomplete="off">
+      <input id="addr" name="addr" placeholder="Wallet address: 0x… (Robinhood, Base, Arbitrum) or Solana" aria-label="Wallet address" spellcheck="false">
+      <input id="label" name="label" placeholder="Label (optional)" aria-label="Label" maxlength="24">
+      <button class="primary" id="add" type="submit">Add wallet</button>
+    </form>
+    <div class="err" id="add-err"></div>
+    <div class="chips" id="wallets"></div>
+    <div class="hint" id="cap"></div>
+  </section>
+
+  <div class="meta" id="meta" aria-live="polite"></div>
+  <div id="warnings"></div>
+
+  <section class="panel empty" id="empty">
+    <h2>See every LP position you hold, in one place</h2>
+    <p>Paste a wallet above. We read Uniswap v3 on Robinhood Chain, Base and Arbitrum, Uniswap v4 on Robinhood Chain, and Meteora DLMM on Solana, then show what each position is worth, the fees waiting to be claimed, and whether it's still in range.</p>
+  </section>
+
+  <div id="tiles"></div>
+
+  <div id="positions-wrap" hidden>
+    <h2>Open positions</h2>
+    <div class="tablewrap"><table id="positions"></table></div>
+  </div>
+
+  <h2>History</h2>
+  <div class="panel locked" data-pro-only>
+    <div>Pro keeps a daily record of your positions' value and fees on this device, charts it, and exports it with your positions as CSV. Pro also tracks up to 20 wallets and refreshes on its own.</div>
+    <a class="btn" href="../?ref=dashboard">Get Pro</a>
+  </div>
+  <div data-pro hidden>
+    <p class="muted" id="history-empty">Your first reading is saved after the next complete refresh. Come back tomorrow to see a trend.</p>
+    <div class="charts" id="history-charts"></div>
+    <div class="tablewrap" style="margin-top:12px"><table id="history-table"></table></div>
+  </div>
+
+  <footer>
+    Runs entirely in your browser: wallet addresses and history stay on this device, and positions are read straight from public RPCs. Read-only: it never asks for a key or a signature. Values are at current pool prices; unclaimed fees are what you'd get by collecting now. Not financial advice.
+  </footer>
+</main>
+
+<dialog id="settings">
+  <form id="settings-form" method="dialog">
+    <h2 style="margin:0">Settings</h2>
+    <label>Pro license key
+      <input id="license" placeholder="paste the key from your purchase message" spellcheck="false" autocomplete="off">
+      <span class="hint" id="license-status"></span>
+    </label>
+    <label>Solana RPC URL (for Meteora positions)
+      <input id="sol-rpc" placeholder="https://mainnet.helius-rpc.com/?api-key=…" spellcheck="false" autocomplete="off">
+      <span class="hint">Solana's public RPC refuses browsers. A free Helius key works; it's stored only on this device.</span>
+    </label>
+    <div class="row"><button type="button" id="close-settings">Cancel</button><button class="primary" type="submit">Save</button></div>
+  </form>
+</dialog>
+<div id="tip" hidden></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
