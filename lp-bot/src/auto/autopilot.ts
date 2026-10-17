@@ -6,14 +6,18 @@
 import path from "node:path";
 import { ethers } from "ethers";
 import type { LpService } from "../lp/service";
+import type { PoolView } from "../chain/pools";
 import type { Scanner, Candidate } from "./scanner";
 import type { Settings } from "../config";
+import { tokenFacts, type TokenFacts } from "./facts";
+import { screenVerdict, type Assessment, type Screener } from "./screen";
 import { readJson, writeJsonAtomic } from "../store";
 import { esc, eth, feeTier, pct, signedEth } from "../core/format";
 import { shortErr } from "../chain/client";
 import { logger } from "../log";
 
 const log = logger("auto");
+const pct0 = (p: number) => `${(p * 100).toFixed(0)}%`;
 const day = (ts = Date.now()) => new Date(ts).toISOString().slice(0, 10);
 
 interface AutoState {
@@ -31,11 +35,19 @@ export interface GateResult {
   reason?: string;
 }
 
+export interface ScreenResult extends GateResult {
+  assessment?: Assessment;
+  facts?: TokenFacts;
+  /** the screener couldn't answer (API down etc.): not the token's fault, so no cooldown */
+  error?: boolean;
+}
+
 export class Autopilot {
   private file: string;
   state: AutoState;
   private timer: NodeJS.Timeout | null = null;
   private busy = false;
+  private warnedNoScreener = false;
 
   constructor(
     private readonly lp: LpService,
@@ -43,6 +55,7 @@ export class Autopilot {
     private readonly settings: () => Settings,
     private readonly notify: Notify,
     dataDir: string,
+    readonly screener?: Screener,
   ) {
     this.file = path.join(dataDir, "autopilot.json");
     this.state = readJson<AutoState>(this.file, { day: day(), spentWei: "0", cooldowns: {}, blocked: [], lastReportDay: day() });
@@ -122,11 +135,63 @@ export class Autopilot {
     return { ok: true };
   }
 
+  /** Gather on-chain facts and ask the screener; settings decide what blocks. */
+  async screen(c: Candidate, set: Settings): Promise<ScreenResult> {
+    if (!this.screener) return { ok: false, error: true, reason: "no screener configured" };
+    let assessment: Assessment;
+    let facts: TokenFacts;
+    try {
+      facts = await tokenFacts(this.lp.chain, c.token, c.pool);
+      const others = [...new Set(this.scanner.ranked().filter((x) => x.token !== c.token).map((x) => x.symbol))];
+      assessment = await this.screener.assess(facts, c, others);
+    } catch (e) {
+      return { ok: false, error: true, reason: `screen failed: ${shortErr(e)}` };
+    }
+    return { ...this.verdict(assessment, set), assessment, facts };
+  }
+
+  verdict(a: Assessment, set: Settings): GateResult {
+    return screenVerdict(a, {
+      maxCopycat: set.autoMaxCopycatPct / 100,
+      maxRugSigns: set.autoMaxRugPct / 100,
+      maxRisk: set.autoMaxRiskPct / 100,
+    });
+  }
+
+  /** The screener's last answer for a token, if still cached (no API call). */
+  cachedScreen(token: string, set: Settings): ScreenResult | undefined {
+    const a = this.screener?.peek?.(token);
+    return a && { ...this.verdict(a, set), assessment: a };
+  }
+
+  /** Screen any token on demand: the tracked pool if the scanner has one, else `deepest` (or a lookup). */
+  async screenToken(token: string, deepest?: PoolView): Promise<ScreenResult & { symbol: string }> {
+    const t = ethers.getAddress(token);
+    let c = this.scanner
+      .ranked()
+      .filter((x) => x.token === t)
+      .sort((a, b) => (b.depthWei > a.depthWei ? 1 : -1))[0];
+    if (!c) {
+      const p = deepest ?? (await this.lp.findPools(t))[0];
+      if (!p) return { ok: false, error: true, reason: "no WETH pool with liquidity", symbol: t };
+      c = { pool: p.address, token: t, symbol: p.token.symbol, fee: p.fee, depthWei: p.quoteReserve, priceE18: p.priceE18, aprPct: 0, aprEmaPct: 0, movePct: 0, swaps: 0, samples: 0, updatedAt: Date.now() };
+    }
+    return { ...(await this.screen(c, this.settings())), symbol: c.symbol };
+  }
+
   private async maybeOpen() {
     const set = this.settings();
     const size = ethers.parseEther(String(set.autoSizeEth));
     if (this.autoPositions().length >= set.autoMaxOpen) return;
     if (this.spentToday() + size > ethers.parseEther(String(set.autoDailyEth))) return;
+    if (set.autoScreen && !this.screener) {
+      if (!this.warnedNoScreener) {
+        this.warnedNoScreener = true;
+        log.warn("autoScreen is on but TYPESAFE_API_KEY is not set: not opening anything");
+        await this.notify("⚠️ Autopilot won't open: token screening is on but <code>TYPESAFE_API_KEY</code> is not set. Add the key and restart, or <code>/set autoScreen off</code>.");
+      }
+      return;
+    }
     for (const c of this.scanner.ranked()) {
       if (!this.gate(c, set).ok) continue;
       const rt = await this.roundTrip(c, size);
@@ -135,6 +200,19 @@ export class Autopilot {
         this.state.cooldowns[c.token] = Date.now() + set.autoCooldownHours * 3_600_000;
         this.save();
         continue;
+      }
+      let screened: Assessment | undefined;
+      if (set.autoScreen) {
+        const sc = await this.screen(c, set);
+        if (!sc.ok) {
+          log.info(`skip ${c.symbol}: ${sc.reason}`);
+          if (!sc.error) {
+            this.state.cooldowns[c.token] = Date.now() + set.autoCooldownHours * 3_600_000;
+            this.save();
+          }
+          continue;
+        }
+        screened = sc.assessment;
       }
       try {
         const plan = await this.lp.plan(c.pool, size, set.autoMode);
@@ -145,7 +223,8 @@ export class Autopilot {
         this.save();
         await this.notify(
           `🤖 Auto-opened <b>#${esc(rec.id)}</b> ${esc(c.symbol)} ${feeTier(c.fee)} · ${eth(BigInt(rec.depositQuote))} ETH · ${set.autoMode}\n` +
-            `measured fee APR ${c.aprEmaPct.toFixed(0)}% · depth ${eth(c.depthWei, 2)} ETH${this.lp.paper ? " <i>[paper]</i>" : ""}`,
+            `measured fee APR ${c.aprEmaPct.toFixed(0)}% · depth ${eth(c.depthWei, 2)} ETH${this.lp.paper ? " <i>[paper]</i>" : ""}` +
+            (screened ? `\nscreen (${esc(screened.source)}): copycat ${pct0(screened.copycat)} · rug signs ${pct0(screened.rugSigns)} · risk ${pct0(screened.risk)}` : ""),
         );
       } catch (e) {
         log.warn(`open ${c.symbol} failed: ${shortErr(e)}`);

@@ -8,6 +8,19 @@ import { PositionBook } from "../../src/lp/positions";
 import { LpService } from "../../src/lp/service";
 import { Scanner } from "../../src/auto/scanner";
 import { Autopilot } from "../../src/auto/autopilot";
+import { CachedScreener, type Assessment, type Screener } from "../../src/auto/screen";
+import { Handlers } from "../../src/bot/handlers";
+import type { TokenFacts } from "../../src/auto/facts";
+
+/** stand-in for Jev: records the facts it was shown and returns a fixed assessment */
+function fakeScreener(a: Partial<Assessment> = {}) {
+  const seen: TokenFacts[] = [];
+  const s: Screener = {
+    name: "fake",
+    assess: async (f) => (seen.push(f), { copycat: 0.05, rugSigns: 0.05, risk: 0.1, source: "fake", ...a }),
+  };
+  return { s, seen };
+}
 
 let env: TestEnv;
 beforeAll(async () => {
@@ -17,7 +30,7 @@ afterAll(async () => {
   await env?.stop();
 });
 
-function setup(sub: string) {
+function setup(sub: string, screener?: Screener) {
   const dataDir = path.join(env.dataDir, sub);
   fs.mkdirSync(dataDir, { recursive: true });
   const cfg = loadConfig({
@@ -31,7 +44,7 @@ function setup(sub: string) {
   const lp = new LpService(chain, new PositionBook(dataDir), () => settings.value, true);
   const scanner = new Scanner(chain, () => settings.value, dataDir);
   const sent: string[] = [];
-  const auto = new Autopilot(lp, scanner, () => settings.value, async (t) => sent.push(t), dataDir);
+  const auto = new Autopilot(lp, scanner, () => settings.value, async (t) => sent.push(t), dataDir, screener);
   return { lp, settings, scanner, auto, sent };
 }
 
@@ -46,7 +59,8 @@ async function churn() {
 
 describe("scanner + autopilot", () => {
   it("discovers active pools from swaps, measures yield, auto-opens, then rotates out", async () => {
-    const { lp, settings, scanner, auto, sent } = setup("auto");
+    const screen = fakeScreener();
+    const { lp, settings, scanner, auto, sent } = setup("auto", screen.s);
     await churn();
     await scanner.scan();
     expect(scanner.indexedCount).toBe(2);
@@ -73,7 +87,12 @@ describe("scanner + autopilot", () => {
     settings.set("autoMaxOpen", "1");
     await auto.tick();
     expect(auto.autoPositions()).toHaveLength(1);
-    expect(sent.some((t) => t.includes("Auto-opened"))).toBe(true);
+    expect(sent.some((t) => t.includes("Auto-opened") && t.includes("screen (fake)"))).toBe(true);
+    // the screener was shown real on-chain facts for the token it let through
+    expect(screen.seen).toHaveLength(1);
+    expect(screen.seen[0]!.address).toBe(auto.autoPositions()[0]!.token);
+    expect(screen.seen[0]!.symbol).toBe(auto.autoPositions()[0]!.symbol);
+    expect(screen.seen[0]!.supplyInPoolPct).toBeGreaterThan(0);
     await auto.tick(); // max open reached → still one
     expect(auto.autoPositions()).toHaveLength(1);
 
@@ -85,6 +104,56 @@ describe("scanner + autopilot", () => {
     expect(sent.some((t) => t.includes("Auto-closed") && t.includes("yield faded"))).toBe(true);
     expect(auto.state.cooldowns[held.token]).toBeGreaterThan(Date.now());
   }, 240_000);
+
+  it("does not open what the screener blocks, or anything without a screener", async () => {
+    const screen = fakeScreener({ rugSigns: 0.95 });
+    const { lp, settings, scanner, auto } = setup("screen", new CachedScreener(screen.s));
+    for (let i = 0; i < 3; i++) {
+      await churn();
+      await scanner.scan();
+    }
+    for (const [k, v] of [["autoEnabled", "on"], ["autoMinAprPct", "0"], ["autoMaxMovePct", "100"]]) settings.set(k!, v!);
+    await auto.tick();
+    expect(lp.book.open()).toHaveLength(0);
+    expect(screen.seen.length).toBe(2); // both pools asked, both blocked
+    for (const f of screen.seen) expect(auto.state.cooldowns[f.address]).toBeGreaterThan(Date.now());
+
+    // /scan shows the cached verdict; /screen answers from cache with the on-chain facts
+    const token = screen.seen[0]!.address;
+    expect(auto.cachedScreen(token, settings.value)).toMatchObject({ ok: false, reason: "rug signs 95%" });
+    const out: string[] = [];
+    const tg = { ownerId: "1", send: async (t: string) => (out.push(t), { message_id: out.length }), edit: async (_: number, t: string) => void out.push(t), answer: async () => {} };
+    const h = new Handlers(tg as any, lp, settings, auto);
+    await h.handle({ chatId: "1", fromId: "1", text: "/scan" });
+    expect(out.at(-1)).toContain("🧪🚫");
+    await h.handle({ chatId: "1", fromId: "1", text: `/screen ${token}` });
+    expect(out.at(-1)).toContain("rug signs 95%");
+    expect(out.at(-1)).toContain("autopilot would skip");
+    expect(out.at(-1)).toContain("admin functions");
+    expect(screen.seen.length).toBe(2); // cached: no new screener call
+    await h.handle({ chatId: "1", fromId: "1", text: "/screen 0x000000000000000000000000000000000000beef" });
+    expect(out.at(-1)).toContain("no WETH pool");
+    // pasting the token for a manual open shows the same warning above the pool picker
+    await h.handle({ chatId: "1", fromId: "1", text: token });
+    expect(out.at(-1)).toContain("Pick a pool");
+    expect(out.at(-1)).toContain("🧪⚠️");
+    expect(out.at(-1)).toContain("autopilot would skip: rug signs 95%");
+
+    // same pools, no screener: screening on → nothing opens and the owner is told once
+    const bare = setup("screen-none");
+    for (let i = 0; i < 3; i++) {
+      await churn();
+      await bare.scanner.scan();
+    }
+    for (const [k, v] of [["autoEnabled", "on"], ["autoMinAprPct", "0"], ["autoMaxMovePct", "100"]]) bare.settings.set(k!, v!);
+    await bare.auto.tick();
+    await bare.auto.tick();
+    expect(bare.lp.book.open()).toHaveLength(0);
+    expect(bare.sent.filter((t) => t.includes("TYPESAFE_API_KEY"))).toHaveLength(1);
+    bare.settings.set("autoScreen", "off");
+    await bare.auto.tick();
+    expect(bare.lp.book.open()).toHaveLength(1);
+  }, 480_000);
 
   it("respects the daily budget", async () => {
     const { lp, settings, scanner, auto } = setup("budget");

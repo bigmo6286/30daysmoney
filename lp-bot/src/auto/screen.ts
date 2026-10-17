@@ -19,6 +19,8 @@ export interface Assessment {
 export interface Screener {
   readonly name: string;
   assess(facts: TokenFacts, market: Candidate, others: string[]): Promise<Assessment>;
+  /** a still-valid earlier assessment, if the screener keeps one */
+  peek?(token: string): Assessment | undefined;
 }
 
 export interface ScreenPolicy {

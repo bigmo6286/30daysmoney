@@ -38,6 +38,8 @@ Runs on **Robinhood Chain** by default; **Base** and **Arbitrum** are built in, 
 | `/closeall` | close everything |
 | `/wallet` | address + balance |
 | `/settings` · `/set <key> <value>` | view / change settings live |
+| `/scan` · `/auto` | best pools by measured fee yield · autopilot status, `/auto on\|off`, `/auto block <token>` |
+| `/screen <token>` | Jev risk check on any token: copycat, rug signs, risk, plus the on-chain facts behind them |
 
 ### Settings
 
@@ -54,6 +56,21 @@ Runs on **Robinhood Chain** by default; **Base** and **Arbitrum** are built in, 
 | `autoRebalance` | off | close + reopen around the new price once out of range for `rebalanceGraceMin` |
 | `rebalanceGraceMin` | 15 | |
 | `swapToEthOnClose` | on | sell the token side back to ETH on close |
+
+### Autopilot token screening
+
+Before the autopilot opens a pool it reads the token contract on-chain (owner, upgradeable proxy, admin functions like `mint` / `blacklist` / tax setters, share of supply in the pool) and asks [Jev](https://docs.typesafe.ai) three typed questions in one request: does the name imitate another project, can the deployer still take value from holders, and how risky is LP-ing it overall. The thresholds that block an open are settings, so you can tune them without touching the prompt. Each token is judged at most once per 24h.
+
+Set `TYPESAFE_API_KEY` in `.env` (and optionally `JEV_MODEL` to pin a version). With screening on and no key, the autopilot opens nothing and tells you so once.
+
+| key | default | |
+|---|---|---|
+| `autoScreen` | on | screen every token before auto-opening |
+| `autoMaxCopycatPct` | 50 | block if P(copycat name) is above this |
+| `autoMaxRugPct` | 40 | block if P(deployer can drain holders) is above this |
+| `autoMaxRiskPct` | 60 | block if overall risk (0 low … 100 extreme) is above this |
+
+A blocked token goes on cooldown for `autoCooldownHours`. If Jev can't be reached, that candidate is skipped this scan with no cooldown.
 
 ## Setup (5 minutes)
 
