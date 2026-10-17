@@ -1,10 +1,12 @@
 # The store page on GitHub Pages (https://<owner>.github.io/<repo>/), built from checkout's product
 # list. Needs Settings → Pages → Source: "GitHub Actions", and the repo variable SHOP_BOT.
+# This must be the only workflow that deploys Pages: GitHub's starter "static" / "Jekyll" workflows
+# publish the whole repository instead and overwrite the store on every push.
 name: pages
 on:
   push:
     branches: [main]
-    paths: ["checkout/public/store.html", "checkout/src/site.ts", "checkout/src/config.ts", ".github/workflows/pages.yml"]
+    paths: ["checkout/public/store.html", "checkout/src/site.ts", "checkout/src/config.ts", ".github/workflows/**"]
   workflow_dispatch:
 permissions:
   contents: read
