@@ -1,0 +1,32 @@
+{
+  "name": "dlmm-agent",
+  "version": "0.1.0",
+  "description": "Telegram-controlled Meteora DLMM liquidity agent for Solana: deterministic screening, paper mode, simulated sends",
+  "type": "module",
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env --import tsx src/index.ts",
+    "dev": "node --env-file-if-exists=.env --watch --import tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@meteora-ag/dlmm": "^1.9.14",
+    "@solana/spl-token": "^0.4.13",
+    "@solana/web3.js": "^1.98.4",
+    "bn.js": "^5.2.1",
+    "bs58": "^6.0.0",
+    "tsx": "^4.20.6",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/bn.js": "^5.2.0",
+    "@types/node": "^22.18.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

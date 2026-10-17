@@ -1,0 +1,10 @@
+services:
+  dlmm-agent:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - dlmm-data:/app/data
+
+volumes:
+  dlmm-data:
