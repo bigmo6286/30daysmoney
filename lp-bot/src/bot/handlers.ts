@@ -108,7 +108,18 @@ export class Handlers {
     const kb: Keyboard = pools.map((p, i) => [{ text: `${feeTier(p.fee)} · ${eth(p.quoteReserve, 3)} ETH depth`, data: `p:${i}` }]);
     kb.push([{ text: "✖ Cancel", data: "x" }]);
     const t = pools[0]!.token;
-    await this.tg.edit(msg.message_id, `<b>${esc(t.symbol)}</b> · price ${price(Number(pools[0]!.priceE18) / 1e18)} ETH\nPick a pool:`, kb);
+    const screen = await this.screenLine(token, pools[0]!);
+    await this.tg.edit(msg.message_id, `<b>${esc(t.symbol)}</b> · price ${price(Number(pools[0]!.priceE18) / 1e18)} ETH${screen}\nPick a pool:`, kb);
+  }
+
+  /** One-line Jev verdict for the pool picker; empty when there's no screener or it fails. Never blocks a manual open. */
+  private async screenLine(token: string, deepest: PoolView): Promise<string> {
+    if (!this.auto?.screener) return "";
+    const r = await this.auto.screenToken(token, deepest).catch(() => undefined);
+    const a = r?.assessment;
+    if (!r || !a) return "";
+    const p = (x: number) => `${(x * 100).toFixed(0)}%`;
+    return `\n${r.ok ? "🧪✅" : "🧪⚠️"} copycat ${p(a.copycat)} · rug signs ${p(a.rugSigns)} · risk ${p(a.risk)}${r.ok ? "" : ` · <b>autopilot would skip: ${esc(r.reason ?? "")}</b>`}`;
   }
 
   private async onAmount(text: string) {

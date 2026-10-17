@@ -133,6 +133,11 @@ describe("scanner + autopilot", () => {
     expect(screen.seen.length).toBe(2); // cached: no new screener call
     await h.handle({ chatId: "1", fromId: "1", text: "/screen 0x000000000000000000000000000000000000beef" });
     expect(out.at(-1)).toContain("no WETH pool");
+    // pasting the token for a manual open shows the same warning above the pool picker
+    await h.handle({ chatId: "1", fromId: "1", text: token });
+    expect(out.at(-1)).toContain("Pick a pool");
+    expect(out.at(-1)).toContain("🧪⚠️");
+    expect(out.at(-1)).toContain("autopilot would skip: rug signs 95%");
 
     // same pools, no screener: screening on → nothing opens and the owner is told once
     const bare = setup("screen-none");

@@ -6,6 +6,7 @@
 import path from "node:path";
 import { ethers } from "ethers";
 import type { LpService } from "../lp/service";
+import type { PoolView } from "../chain/pools";
 import type { Scanner, Candidate } from "./scanner";
 import type { Settings } from "../config";
 import { tokenFacts, type TokenFacts } from "./facts";
@@ -163,15 +164,15 @@ export class Autopilot {
     return a && { ...this.verdict(a, set), assessment: a };
   }
 
-  /** Screen any token on demand: the tracked pool if the scanner has one, else its deepest WETH pool. */
-  async screenToken(token: string): Promise<ScreenResult & { symbol: string }> {
+  /** Screen any token on demand: the tracked pool if the scanner has one, else `deepest` (or a lookup). */
+  async screenToken(token: string, deepest?: PoolView): Promise<ScreenResult & { symbol: string }> {
     const t = ethers.getAddress(token);
     let c = this.scanner
       .ranked()
       .filter((x) => x.token === t)
       .sort((a, b) => (b.depthWei > a.depthWei ? 1 : -1))[0];
     if (!c) {
-      const [p] = await this.lp.findPools(t);
+      const p = deepest ?? (await this.lp.findPools(t))[0];
       if (!p) return { ok: false, error: true, reason: "no WETH pool with liquidity", symbol: t };
       c = { pool: p.address, token: t, symbol: p.token.symbol, fee: p.fee, depthWei: p.quoteReserve, priceE18: p.priceE18, aprPct: 0, aprEmaPct: 0, movePct: 0, swaps: 0, samples: 0, updatedAt: Date.now() };
     }
