@@ -1,6 +1,8 @@
 /**
  * Meteora pool discovery API (public, no key). Field names follow the API's snake_case JSON;
- * everything is optional and parsed defensively, because the API is unversioned.
+ * everything is optional and parsed defensively, because the API is unversioned. Checked against
+ * the live API on 2026-10-17: bin step is nested (`dlmm_params.bin_step`, though the server-side
+ * filter is still called `dlmm_bin_step`) and token warnings are a list on each token.
  */
 import { logger } from "../log";
 
@@ -35,10 +37,13 @@ export interface Pool {
 type Raw = Record<string, any>;
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)) ? Number(v) : 0);
 
+const hasCritical = (t: Raw) => Array.isArray(t.warnings) && t.warnings.some((w: Raw) => /^(critical|danger|high)$/i.test(String(w?.severity ?? "")));
+
 export function parsePool(r: Raw): Pool | null {
   const x = r.token_x ?? {};
   const y = r.token_y ?? {};
   if (r.pool_type && r.pool_type !== "dlmm") return null;
+  if (r.is_blacklisted === true) return null;
   const solIsX = x.address === WSOL;
   if (!solIsX && y.address !== WSOL) return null; // SOL pairs only
   const base = solIsX ? y : x;
@@ -49,7 +54,7 @@ export function parsePool(r: Raw): Pool | null {
     mint: String(base.address),
     symbol: String(base.symbol ?? "?").slice(0, 24),
     solIsX,
-    binStep: num(r.dlmm_bin_step),
+    binStep: num(r.dlmm_params?.bin_step ?? r.dlmm_bin_step),
     tvlUsd: num(r.tvl),
     activeTvlUsd: num(r.active_tvl),
     volumeUsd: num(r.volume),
@@ -61,7 +66,7 @@ export function parsePool(r: Raw): Pool | null {
     launchpad: base.launchpad ?? r.base_token_launchpad ?? undefined,
     createdAt: num(base.created_at) || undefined,
     warnings: {
-      critical: Boolean(r.base_token_has_critical_warnings || r.quote_token_has_critical_warnings),
+      critical: Boolean(r.base_token_has_critical_warnings || r.quote_token_has_critical_warnings) || hasCritical(x) || hasCritical(y),
       highSingleOwnership: Boolean(r.base_token_has_high_single_ownership),
       highConcentration: Boolean(r.base_token_has_high_supply_concentration),
     },

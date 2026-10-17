@@ -6,6 +6,8 @@ export interface ChainPreset {
   name: string;
   chainId: number;
   rpcUrl: string;
+  /** Alchemy network slug: with ALCHEMY_KEY set, the bot uses Alchemy instead of the public RPC */
+  alchemy?: string;
   explorer: string;
   nativeSymbol: string;
   contracts: {
@@ -22,6 +24,7 @@ export const CHAINS: Record<string, ChainPreset> = {
     name: "Robinhood Chain",
     chainId: 4663,
     rpcUrl: "https://rpc.mainnet.chain.robinhood.com",
+    alchemy: "robinhood-mainnet",
     explorer: "https://robinhoodchain.blockscout.com",
     nativeSymbol: "ETH",
     contracts: {
@@ -36,6 +39,7 @@ export const CHAINS: Record<string, ChainPreset> = {
     name: "Base",
     chainId: 8453,
     rpcUrl: "https://mainnet.base.org",
+    alchemy: "base-mainnet",
     explorer: "https://basescan.org",
     nativeSymbol: "ETH",
     contracts: {
@@ -50,6 +54,7 @@ export const CHAINS: Record<string, ChainPreset> = {
     name: "Arbitrum One",
     chainId: 42161,
     rpcUrl: "https://arb1.arbitrum.io/rpc",
+    alchemy: "arb-mainnet",
     explorer: "https://arbiscan.io",
     nativeSymbol: "ETH",
     contracts: {

@@ -67,6 +67,8 @@ export interface AppConfig {
   mode: Mode;
   chain: ChainPreset;
   rpcUrl: string;
+  /** eth_getLogs (the scanner) goes here: Alchemy's free tier allows only 10 blocks per call */
+  logsRpcUrl: string;
   walletKey: string;
   paperAddress: string;
   tgToken: string;
@@ -112,8 +114,11 @@ function chainFromEnv(e: NodeJS.ProcessEnv): ChainPreset {
 export function loadConfig(e: NodeJS.ProcessEnv = process.env): AppConfig {
   const mode: Mode = (e.MODE || "paper").toLowerCase() === "live" ? "live" : "paper";
   const chain = chainFromEnv(e);
-  const rpcUrl = (e.RPC_URL || chain.rpcUrl).trim();
+  const alchemyKey = (e.ALCHEMY_KEY || "").trim();
+  const rpcUrl = (e.RPC_URL || (alchemyKey && chain.alchemy ? `https://${chain.alchemy}.g.alchemy.com/v2/${alchemyKey}` : chain.rpcUrl)).trim();
   if (!rpcUrl) throw new Error("RPC_URL is required");
+  const viaAlchemy = !e.RPC_URL && rpcUrl !== chain.rpcUrl;
+  const logsRpcUrl = (e.LOGS_RPC_URL || (viaAlchemy ? chain.rpcUrl : rpcUrl)).trim();
   const walletKey = (e.WALLET_KEY || "").trim();
   if (mode === "live" && !/^0x[0-9a-fA-F]{64}$/.test(walletKey)) {
     throw new Error("MODE=live needs WALLET_KEY (0x + 64 hex). Use a dedicated wallet, never your main one.");
@@ -128,6 +133,7 @@ export function loadConfig(e: NodeJS.ProcessEnv = process.env): AppConfig {
     mode,
     chain,
     rpcUrl,
+    logsRpcUrl,
     walletKey,
     paperAddress,
     tgToken,

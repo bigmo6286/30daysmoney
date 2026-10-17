@@ -5,9 +5,12 @@ import { rpc } from "./rpc";
 export const BASE_USDC = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 const TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 const CONFIRMATIONS = 3;
-/** public RPCs cap eth_getLogs ranges; start modest and shrink when the node refuses */
+/**
+ * RPCs cap eth_getLogs ranges; start modest and shrink when the node refuses. Alchemy's free tier
+ * allows only 10 blocks per call, which still keeps up with Base (2 s blocks, one call per poll).
+ */
 const CHUNK_START = 500;
-const CHUNK_MIN = 50;
+const CHUNK_MIN = 10;
 
 interface Log {
   address: string;
@@ -66,8 +69,11 @@ export class BaseWatcher {
           this.f,
         );
       } catch (e) {
-        // keep what we have: the cursor stays at the first block not yet read, so nothing is skipped
-        if (this.chunk > CHUNK_MIN) this.chunk = Math.max(CHUNK_MIN, Math.floor(this.chunk / 2));
+        // range refused: retry the same block at half the range (the cursor never skips a block)
+        if (this.chunk > CHUNK_MIN) {
+          this.chunk = Math.max(CHUNK_MIN, Math.floor(this.chunk / 2));
+          continue;
+        }
         if (from !== start) break; // some chunks done: return them; the rest next poll
         throw e;
       }

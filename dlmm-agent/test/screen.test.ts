@@ -18,6 +18,12 @@ describe("discovery parsing", () => {
     expect(parsePool({ ...rawPool(), token_y: { address: "USDC", symbol: "USDC" } })).toBeNull();
     expect(parsePool({ ...rawPool(), pool_type: "damm" })).toBeNull();
     expect(parsePool({})).toBeNull();
+    expect(parsePool({ ...rawPool(), is_blacklisted: true })).toBeNull();
+    // older flat field still read; the live API nests it
+    expect(parsePool({ ...rawPool(), dlmm_params: undefined, dlmm_bin_step: 80 })!.binStep).toBe(80);
+    const warned = (severity: string) => parsePool({ ...rawPool(), token_x: { ...rawPool().token_x, warnings: [{ type: "X", severity }] } })!.warnings.critical;
+    expect(warned("info")).toBe(false); // e.g. NOT_VERIFIED: every new token has it
+    expect(warned("critical")).toBe(true);
     expect(parsePool({ ...rawPool(), tvl: "12.5", volume: null })).toMatchObject({ tvlUsd: 12.5, volumeUsd: 0 });
   });
   it("builds the server-side filter and reads the data array", async () => {
@@ -36,7 +42,7 @@ describe("rank", () => {
       [{ tvl: 100 }, /TVL/],
       [{ fee_active_tvl_ratio: 0.1 }, /fee\/TVL/],
       [{ base_token_holders: 10 }, /holders/],
-      [{ dlmm_bin_step: 20 }, /bin step/],
+      [{ dlmm_params: { bin_step: 20 } }, /bin step/],
       [{ base_token_has_critical_warnings: true }, /critical/],
       [{ volatility: 0 }, /volatility/],
     ];

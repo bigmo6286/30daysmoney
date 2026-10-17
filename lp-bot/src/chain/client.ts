@@ -12,6 +12,8 @@ const log = logger("tx");
 
 export class Chain {
   readonly provider: ethers.JsonRpcProvider;
+  /** for eth_getLogs only; the same provider unless LOGS_RPC_URL / Alchemy split them */
+  readonly logsProvider: ethers.JsonRpcProvider;
   readonly signer: ethers.Wallet | null;
   readonly address: string;
   private queue: Promise<unknown> = Promise.resolve();
@@ -25,6 +27,11 @@ export class Chain {
     // after a transaction can return the pre-transaction value (sub-second blocks make that common)
     this.provider = new ethers.JsonRpcProvider(req, cfg.chain.chainId, { staticNetwork: true, cacheTimeout: -1 });
     this.provider.pollingInterval = Number(process.env.POLL_MS) || 1000;
+    if (cfg.logsRpcUrl && cfg.logsRpcUrl !== cfg.rpcUrl) {
+      const lr = new ethers.FetchRequest(cfg.logsRpcUrl);
+      lr.timeout = req.timeout;
+      this.logsProvider = new ethers.JsonRpcProvider(lr, cfg.chain.chainId, { staticNetwork: true, cacheTimeout: -1 });
+    } else this.logsProvider = this.provider;
     this.signer = cfg.walletKey ? new ethers.Wallet(cfg.walletKey, this.provider) : null;
     this.address = this.signer?.address ?? cfg.paperAddress;
   }

@@ -97,7 +97,7 @@ export class Scanner {
 
   /** Read Swap events since the last scan; verify and remember new WETH pools from our factory. */
   async refreshIndex(): Promise<void> {
-    const head = await this.chain.provider.getBlockNumber();
+    const head = await this.chain.logsProvider.getBlockNumber();
     const lookbackBlocks = Number(process.env.SCAN_LOOKBACK_BLOCKS) || 30_000;
     let from = Math.max(this.data.lastBlock + 1, head - lookbackBlocks);
     let chunk = MAX_CHUNK;
@@ -106,7 +106,7 @@ export class Scanner {
       const to = Math.min(from + chunk - 1, head);
       let logs: ethers.Log[];
       try {
-        logs = await this.chain.provider.getLogs({ topics: [SWAP_TOPIC], fromBlock: from, toBlock: to });
+        logs = await this.chain.logsProvider.getLogs({ topics: [SWAP_TOPIC], fromBlock: from, toBlock: to });
       } catch (e) {
         log.debug(`getLogs ${from}-${to} failed: ${(e as Error).message.slice(0, 120)}`);
         // providers cap results/ranges per query: shrink the window and retry

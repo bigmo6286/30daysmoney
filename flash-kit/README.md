@@ -44,13 +44,16 @@ Chains: Robinhood Chain, Base, Ethereum, or any chain with Morpho Blue + Uniswap
 
 - Most two-pool gaps on liquid pairs are closed by others within a block. This is a tool, not a money printer: run it on long-tail pairs, and expect most scans to report nothing.
 - Public mempools: a visible profitable transaction can be copied or sandwiched. The revert floor protects your principal, not your gas. Use a private RPC where your chain has one.
-- **Not rebuilt yet:** kamino-tools' Solana flash borrow→strategy→repay builder, and RobinArb's RobinFun bonding-curve ↔ Uniswap v4 route. Both need live RPC access to test, which this build environment doesn't have.
+- **Not rebuilt yet:** kamino-tools' Solana flash borrow→strategy→repay builder, and RobinArb's RobinFun bonding-curve ↔ Uniswap v4 route.
 
 ## Tests
 
 ```bash
 npm run typecheck && npm test
 npm run test:integration    # needs ../lp-bot dependencies (local chain with the real Uniswap v3 contracts)
+ALCHEMY_KEY=… npm run test:fork   # Ethereum mainnet fork: the real Morpho Blue and Uniswap v3 (or FORK_URL=…)
 ```
+
+**Mainnet fork** (`test/fork`, pinned block 26,211,400): the real Morpho Blue holds >1,000 WETH, all four WETH/USDC fee tiers exist, and a scan before any trade finds nothing profitable (the market is efficient). After a 3,000 WETH dump on the 0.3% pool, the executor flash-borrows from the real Morpho, closes the gap, pays the owner exactly the simulated profit, leaves Morpho's balance unchanged and holds no tokens or allowances, and the same route then reverts. The CLI with the stock `--chain ethereum` preset does the same end to end. Read-only live checks on the same day: Morpho can lend 26.7 WETH on Robinhood Chain (confirms the address taken from the reference toolkit), 82k on Base, 13.7k on Ethereum.
 
 On a local chain with the real Uniswap v3 factory, SwapRouter02 and QuoterV2 plus a Morpho Blue stand-in that lends exactly like Morpho (send → callback → pull back), a second pool priced 5% off creates a real gap. The tests check that the scan finds it, the simulation predicts the profit **exactly**, the transaction pays exactly that to the owner and leaves nothing behind, and every unsafe call reverts with the right error. They also run the CLI's `arb` end to end. In one run it found a gap worth less than the gas and correctly skipped it.

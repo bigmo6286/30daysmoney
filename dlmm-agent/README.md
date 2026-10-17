@@ -52,19 +52,26 @@ Meteora DLMM liquidity on Solana, run from Telegram. The agent scans Meteora's t
 
 ## Setup
 
-You need Node 20+ (or Docker), a Telegram bot token from [@BotFather](https://t.me/BotFather), your numeric Telegram id from [@userinfobot](https://t.me/userinfobot), and ideally a paid Solana RPC.
+You need Node 20+ (or Docker), a Telegram bot token from [@BotFather](https://t.me/BotFather), your numeric Telegram id from [@userinfobot](https://t.me/userinfobot), and a real Solana RPC: an Alchemy key (free tier is enough, set `ALCHEMY_KEY`) or any `RPC_URL`.
 
 ```bash
-cp .env.example .env     # TG_TOKEN, TG_OWNER_ID, RPC_URL, TYPESAFE_API_KEY; leave MODE=paper
+cp .env.example .env     # TG_TOKEN, TG_OWNER_ID, ALCHEMY_KEY or RPC_URL, TYPESAFE_API_KEY; leave MODE=paper
 npm install
+npm run smoke            # one paper pass against mainnet, no Telegram, nothing signed
 npm start
 ```
+
+`npm run smoke` checks the RPC, runs Meteora discovery and screening, puts the top pools through every gate (mint facts, Jupiter round trip, Jev), then paper-opens the first that passes, values it from the chain and closes it. It uses a throwaway data directory.
 
 Run it in paper for a few days, watch `/status` and `/history`, tune with `/set`. For real funds: a **fresh wallet** holding only what you're willing to lose, `MODE=live`, `WALLET_KEY`, restart.
 
 ```bash
 docker compose up -d --build   # 24/7 on a VPS; state lives in the dlmm-data volume
 ```
+
+## Live check (Oct 17)
+
+The first mainnet run (`npm run smoke`, Alchemy free tier) found that Meteora's discovery API nests the bin step (`dlmm_params.bin_step`), so every pool read as bin step 0 and **nothing could ever pass screening**. That's fixed, and the test fixtures now use the live API's shape. After the fix: 37 pools → 10 pass screening → the first candidate was refused by Jev (rug signs 45%), the second passed every gate (round trip −1.9%) and went through paper open → valued from its live active bin → close.
 
 ## Paper mode is an estimate
 

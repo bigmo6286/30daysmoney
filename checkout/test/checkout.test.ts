@@ -180,6 +180,25 @@ describe("base watcher", () => {
     expect(q.topics[2]).toBe("0x" + "0".repeat(24) + RECV.slice(2));
     expect(w.state.next).toBe(0x69);
   });
+
+  it("shrinks the log range down to Alchemy's free-tier 10 blocks in one poll, skipping nothing", async () => {
+    const ranges: [number, number][] = [];
+    const f = (async (_u: string, init: RequestInit) => {
+      const b = JSON.parse(String(init.body));
+      if (b.method === "eth_blockNumber") return new Response(JSON.stringify({ result: "0x" + (1000 + 3).toString(16) }));
+      const [q] = b.params;
+      const [from, to] = [parseInt(q.fromBlock, 16), parseInt(q.toBlock, 16)];
+      if (to - from + 1 > 10) return new Response(JSON.stringify({ error: { code: -32600, message: "Under the Free tier plan, you can make eth_getLogs requests with up to a 10 block range." } }), { status: 400 });
+      ranges.push([from, to]);
+      return new Response(JSON.stringify({ result: [] }));
+    }) as unknown as typeof fetch;
+    const w = new BaseWatcher("http://rpc", RECV, { next: 951 }, f);
+    expect(await w.poll()).toEqual([]);
+    expect(ranges[0]).toEqual([951, 960]);
+    expect(ranges.at(-1)![1]).toBe(1000);
+    ranges.forEach((r, i) => i && expect(r[0]).toBe(ranges[i - 1]![1] + 1)); // contiguous
+    expect(w.state.next).toBe(1001);
+  });
 });
 
 describe("http api", () => {

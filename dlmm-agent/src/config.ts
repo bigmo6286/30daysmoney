@@ -103,7 +103,8 @@ export interface AppConfig {
 
 export function loadConfig(e: NodeJS.ProcessEnv = process.env): AppConfig {
   const mode: Mode = (e.MODE || "paper").toLowerCase() === "live" ? "live" : "paper";
-  const rpcUrl = (e.RPC_URL || "https://api.mainnet-beta.solana.com").trim();
+  const alchemyKey = (e.ALCHEMY_KEY || "").trim();
+  const rpcUrl = (e.RPC_URL || (alchemyKey ? `https://solana-mainnet.g.alchemy.com/v2/${alchemyKey}` : "https://api.mainnet-beta.solana.com")).trim();
   const walletKey = (e.WALLET_KEY || "").trim();
   if (mode === "live" && !walletKey) {
     throw new Error("MODE=live needs WALLET_KEY (base58 secret key or a JSON byte array). Use a dedicated wallet, never your main one.");

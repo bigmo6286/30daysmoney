@@ -77,10 +77,15 @@ A blocked token goes on cooldown for `autoCooldownHours`. If Jev can't be reache
 You need Node 20+ (or Docker), a Telegram bot token from [@BotFather](https://t.me/BotFather), and your numeric Telegram id from [@userinfobot](https://t.me/userinfobot).
 
 ```bash
-cp .env.example .env     # fill in TG_TOKEN and TG_OWNER_ID, leave MODE=paper
+cp .env.example .env     # fill in TG_TOKEN and TG_OWNER_ID (and ALCHEMY_KEY if you have one), leave MODE=paper
 npm install
+npm run smoke            # one paper pass on the real chain: RPC, Telegram token, scan, round trip, Jev, open/close
 npm start
 ```
+
+`npm run smoke` sends no Telegram message and signs nothing; it uses a throwaway data directory. With `ALCHEMY_KEY` set, reads and sends go through Alchemy and the pool scanner's `eth_getLogs` stays on the chain's public RPC, because Alchemy's free tier allows only 10 blocks per `eth_getLogs` call (`LOGS_RPC_URL` overrides this).
+
+Live check (Oct 17, Robinhood Chain): 247 active WETH pools indexed from 30k blocks of Swap logs, round trips on the deepest pools, Jev refused USDG (rug signs 84%: it is a regulated stablecoin with freeze/blacklist powers, so this is a false positive, and harmless here), and PIPEDOG (risk 2%) went through paper open → value from chain → close.
 
 Send `/start` to your bot. When you're ready for real funds, create a **fresh wallet** for the bot, fund it on the chain you use, set `MODE=live` and `WALLET_KEY`, and restart.
 
