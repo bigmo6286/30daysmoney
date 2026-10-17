@@ -39,6 +39,9 @@ jobs:
           SHOP_BOT: ${{ vars.SHOP_BOT }}
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
           CHECK_EVERY_MIN: "15"
+          CONTACT: ${{ vars.CONTACT }}
+          BASE_RECEIVER: ${{ vars.BASE_RECEIVER }}
+          SOL_RECEIVER: ${{ vars.SOL_RECEIVER }}
       - run: npm ci && npm run -s build:web -- ../_site/dashboard
         working-directory: pnl-dashboard
       - uses: actions/upload-pages-artifact@v3

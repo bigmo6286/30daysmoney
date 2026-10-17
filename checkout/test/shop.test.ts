@@ -114,6 +114,10 @@ describe("store page", () => {
     expect(() => renderStore(tpl, { products: [], shopBot: "@bad name", repoUrl: "", checkEveryMin: 5 })).toThrow(/SHOP_BOT/);
     const evil = renderStore(tpl, { products: [{ id: "x", name: "</script><script>alert(1)</script>", priceUsd: 1, blurb: "" }], shopBot: "my_shop_bot", repoUrl: "", checkEveryMin: 5 });
     expect(evil).not.toContain("</script><script>alert(1)");
+    const withSite = renderStore(tpl, { products: DEFAULT_PRODUCTS, shopBot: "my_shop_bot", repoUrl: "", checkEveryMin: 5, contact: "</script>@x", receivers: { base: BASE } });
+    expect(withSite).toContain(BASE);
+    expect(withSite).not.toContain("</script>@x");
+    expect(withSite).toContain('"days":30');
   });
 });
 

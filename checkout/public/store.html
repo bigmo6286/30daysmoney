@@ -3,86 +3,270 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>30daysmoney bots</title>
-<meta name="description" content="Self-hosted liquidity bots for Uniswap v3/v4 and Meteora DLMM. Paper mode first, your keys stay on your server. Pay once in USDC.">
+<title>30daysmoney: LP tools</title>
+<meta name="description" content="Self-hosted liquidity bots for Uniswap v3/v4 and Meteora DLMM, a free LP PnL dashboard, and a flash-loan guide. Your keys stay with you. Pay in USDC on Base or Solana.">
 <style>
 :root {
-  --bg: #f7f7f5; --panel: #ffffff; --ink: #16181d; --muted: #5d6470; --line: #e3e4e8;
-  --accent: #2f6df6; --accent-ink: #ffffff; --ok: #138a52; --warn: #a3620b;
+  color-scheme: light;
+  --bg: #f6f6f3; --panel: #ffffff; --sunk: #efefeb; --ink: #121417; --ink-2: #3f444c; --muted: #646a74; --line: #e0e1e4;
+  --accent: #2a63e8; --accent-ink: #ffffff; --accent-soft: #e8eefc; --ok: #11804c; --warn: #9a5b06;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #0f1115; --panel: #171a21; --ink: #eceef2; --muted: #9aa3b2; --line: #2a2f3a; --accent: #6d97ff; --accent-ink: #0f1115; --ok: #4cc38a; --warn: #e2a64b; }
+  :root { color-scheme: dark; --bg: #0e1013; --panel: #161a20; --sunk: #12151a; --ink: #eceef2; --ink-2: #c9ced6; --muted: #9aa2ae; --line: #272c35; --accent: #6f98ff; --accent-ink: #0e1013; --accent-soft: #1b2438; --ok: #4cc38a; --warn: #e2a64b; }
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
-main { max-width: 980px; margin: 0 auto; padding: 40px 16px 64px; }
-h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.15; margin: 0 0 12px; letter-spacing: -0.02em; }
-.lead { color: var(--muted); max-width: 640px; margin: 0 0 28px; }
-.points { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0 0 32px; padding: 0; list-style: none; color: var(--muted); font-size: 14px; }
-.points li::before { content: "✓ "; color: var(--ok); }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
-.card h2 { font-size: 18px; margin: 0; }
-.card p { margin: 0; color: var(--muted); font-size: 14px; flex: 1; }
-.price { font-size: 24px; font-weight: 650; }
-.price small { font-size: 13px; color: var(--muted); font-weight: 500; }
-button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 10px 14px; }
-button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
-button:disabled { opacity: .6; cursor: default; }
-.fine { color: var(--muted); font-size: 13px; margin-top: 36px; max-width: 720px; }
-dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--ink); padding: 0; width: min(520px, calc(100vw - 32px)); }
-dialog::backdrop { background: rgba(0,0,0,.45); }
-.dlg { padding: 22px; display: flex; flex-direction: column; gap: 14px; }
-.dlg h3 { margin: 0; font-size: 19px; }
-label { font-size: 14px; color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
-input, select { font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
-.row { display: flex; gap: 8px; align-items: center; }
-.row { align-items: stretch; }
-.row > * { flex: 1; }
-.box { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--bg); }
-.k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-.v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; overflow-wrap: anywhere; }
-.big { font-size: 22px; font-weight: 650; }
-.copy { flex: 0 0 auto; padding: 6px 10px; font-size: 13px; }
-.status { font-size: 14px; }
-.status.ok { color: var(--ok); }
-.status.warn { color: var(--warn); }
-.err { color: var(--warn); font-size: 14px; min-height: 1em; }
-a.buy { display: block; }
-a.buy button { width: 100%; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
 a { color: var(--accent); }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+.top { position: sticky; top: 0; z-index: 5; background: color-mix(in oklab, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 56px; }
+.mark { font-weight: 700; letter-spacing: -0.01em; color: var(--ink); text-decoration: none; }
+.top nav { display: flex; gap: 18px; font-size: 14px; }
+.top nav a { color: var(--ink-2); text-decoration: none; }
+.top nav a:hover { color: var(--ink); }
+@media (max-width: 560px) { .top nav a.wide { display: none; } }
+
+.hero { padding-top: 56px; padding-bottom: 36px; }
+.hero h1 { font-size: clamp(30px, 6vw, 48px); line-height: 1.1; margin: 0 0 16px; letter-spacing: -0.025em; max-width: 760px; }
+.hero p { color: var(--ink-2); font-size: clamp(16px, 2.2vw, 18px); max-width: 640px; margin: 0 0 24px; }
+.ctas { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font: inherit; font-weight: 600; font-size: 15px; padding: 11px 18px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); text-decoration: none; cursor: pointer; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.small { font-size: 14px; padding: 8px 14px; }
+.btn:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.points { display: flex; flex-wrap: wrap; gap: 8px; margin: 28px 0 0; padding: 0; list-style: none; }
+.points li { font-size: 13px; color: var(--ink-2); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; }
+.points li::before { content: "✓"; color: var(--ok); font-weight: 700; margin-right: 6px; }
+
+section { padding: 40px 0; }
+section > .wrap > h2 { font-size: clamp(22px, 3.4vw, 28px); margin: 0 0 6px; letter-spacing: -0.015em; }
+.sub { color: var(--muted); margin: 0 0 22px; max-width: 680px; }
+.group { margin-top: 30px; }
+.group:first-of-type { margin-top: 0; }
+.group h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 4px; }
+.group .gintro { color: var(--ink-2); margin: 0 0 14px; font-size: 15px; max-width: 720px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+.card.free { background: var(--sunk); }
+.card h4 { font-size: 18px; margin: 0; letter-spacing: -0.01em; }
+.card p { margin: 0; color: var(--ink-2); font-size: 14.5px; flex: 1; }
+.price { display: flex; align-items: baseline; gap: 6px; }
+.price b { font-size: 28px; letter-spacing: -0.02em; }
+.price span { font-size: 13px; color: var(--muted); }
+.opts { display: flex; flex-direction: column; gap: 8px; }
+.opt { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 10px 10px 14px; }
+.opt .what { font-size: 14px; line-height: 1.35; }
+.opt .what small { display: block; color: var(--muted); font-size: 12.5px; }
+.opt .btn { flex: 0 0 auto; }
+
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 14px; counter-reset: s; padding: 0; margin: 0; list-style: none; }
+.steps li { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; counter-increment: s; }
+.steps li::before { content: counter(s); display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 14px; margin-bottom: 10px; }
+.steps b { display: block; margin-bottom: 4px; }
+.steps span { color: var(--ink-2); font-size: 14.5px; }
+.addr { margin-top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; font-size: 14.5px; }
+.addr code { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; background: var(--sunk); padding: 1px 6px; border-radius: 6px; }
+.addr ul { margin: 8px 0 0; padding-left: 18px; }
+
+.trust { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 14px; }
+.trust div { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; }
+.trust b { display: block; margin-bottom: 2px; }
+.trust span { color: var(--ink-2); font-size: 14.5px; }
+
+details { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 8px; }
+summary { cursor: pointer; padding: 14px 18px; font-weight: 600; list-style: none; display: flex; justify-content: space-between; gap: 12px; }
+summary::-webkit-details-marker { display: none; }
+summary::after { content: "+"; color: var(--muted); font-weight: 400; font-size: 20px; line-height: 1; }
+details[open] summary::after { content: "−"; }
+details > div { padding: 0 18px 16px; color: var(--ink-2); font-size: 15px; }
+
+footer { border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--muted); font-size: 13.5px; }
+footer p { max-width: 760px; margin: 0 0 10px; }
 </style>
 </head>
 <body>
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="#">30daysmoney</a>
+    <nav><a href="#products">Products</a><a class="wide" href="#how">How buying works</a><a class="wide" href="#safety">Safety</a><a href="#faq">FAQ</a></nav>
+  </div>
+</header>
+
 <main>
-  <h1>Liquidity bots you run yourself</h1>
-  <p class="lead">Telegram-controlled bots for Uniswap v3 and v4 (Robinhood Chain, Base, Arbitrum) and Meteora DLMM (Solana). They start in paper mode, simulate every transaction before sending it, and run on your server with your keys. We never hold your funds.</p>
-  <ul class="points">
-    <li>Paper mode by default</li><li>Simulated before sent</li><li>Stop loss on by default</li><li>Token screening</li><li>Pay once in USDC</li>
-  </ul>
-  <div class="grid" id="products"></div>
-  <p class="fine"><b>How buying works:</b> “Buy” opens our shop bot on Telegram. Pick Solana or Base, and it gives you an exact USDC amount and our address. Send that exact amount from your own wallet; your license key arrives in the same chat within about {{CHECK_EVERY_MIN}} minutes. The free version of every bot is on <a href="{{REPO_URL}}">GitHub</a>; the key unlocks the Pro features.</p>
-  <p class="fine">This is software, not an investment product. Providing liquidity can lose money, especially on volatile tokens; past fees don't predict future ones. You run the bot, you hold the keys, you decide what it trades.</p>
+  <div class="hero wrap">
+    <h1>Tools for liquidity providers who'd rather not babysit pools</h1>
+    <p>Bots that run your Uniswap and Meteora positions from Telegram, a dashboard that shows every position you hold across chains, and a guide to building a flash-loan executor. You run the software and you hold the keys.</p>
+    <div class="ctas">
+      <a class="btn primary" href="dashboard/">Open the free dashboard</a>
+      <a class="btn" href="#products">See the bots</a>
+    </div>
+    <ul class="points">
+      <li>Your keys never leave your machine</li><li>Paper mode first</li><li>Every transaction simulated</li><li>Open source on GitHub</li><li>Pay in USDC on Base or Solana</li>
+    </ul>
+  </div>
+
+  <section id="products">
+    <div class="wrap">
+      <h2>Products</h2>
+      <p class="sub">Every bot has a free version on <a href="{{REPO_URL}}">GitHub</a>. A license key unlocks Pro, and the same key also unlocks the dashboard's Pro features.</p>
+      <div id="groups"></div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="wrap">
+      <h2>How buying works</h2>
+      <p class="sub">No account and no card. Checkout runs in a Telegram chat and payment is a plain USDC transfer.</p>
+      <ol class="steps">
+        <li><b>Tap Buy</b><span>This opens our shop bot on Telegram with the product picked.</span></li>
+        <li><b>Pick Base or Solana</b><span>The bot gives you an exact USDC amount (with a few unique cents) and one address to send it to.</span></li>
+        <li><b>Send that exact amount</b><span>Send it from any wallet or exchange. The cents are how we match your payment to your order.</span></li>
+        <li><b>Get your key</b><span>It arrives in the same chat within about {{CHECK_EVERY_MIN}} minutes, with setup steps. Type /status there any time to see it again.</span></li>
+      </ol>
+      <div class="addr" id="addr" hidden>
+        <b>Check the address before you send.</b> The shop bot only ever asks you to pay to one of these:
+        <ul id="addr-list"></ul>
+        If you start an order on both networks, pay only one of them. The other one expires by itself.
+      </div>
+    </div>
+  </section>
+
+  <section id="safety">
+    <div class="wrap">
+      <h2>Trust and safety</h2>
+      <p class="sub">Read this before you connect anything to real money.</p>
+      <div class="trust">
+        <div><b>We never hold your funds or keys</b><span>The bots run on your computer or your VPS. Your wallet key goes in a file there and is never sent to us.</span></div>
+        <div><b>Paper mode by default</b><span>A new bot trades with simulated money until you switch it to live yourself. Watch it first.</span></div>
+        <div><b>Simulated before sent</b><span>Every live transaction is dry-run against the chain first. If the simulation fails, nothing is sent.</span></div>
+        <div><b>Guard rails</b><span>Stop loss and take profit are in the free version, because safety is never paywalled. The DLMM Agent cuts at −15% by default. Before the autopilot opens a pool, it checks the token contract for mint, blacklist and tax powers.</span></div>
+        <div><b>The dashboard is read-only</b><span>It only needs your public address and never asks for a signature. Addresses and history stay in your browser.</span></div>
+        <div><b>Open code</b><span>The free versions are public, so you can read exactly what runs before you pay for anything.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap">
+      <h2>FAQ</h2>
+      <details><summary>Which chains and protocols are supported?</summary><div><b>LP Bot:</b> Uniswap v3 on Robinhood Chain, Base and Arbitrum, and Uniswap v4 on Robinhood Chain. <b>DLMM Agent:</b> Meteora DLMM on Solana. <b>Dashboard:</b> all of the above in one view.</div></details>
+      <details><summary>Is the dashboard really free?</summary><div>Yes, for one wallet with live value, unclaimed fees and range status. Pro adds up to 20 wallets, a daily history of value and fees with charts, CSV export and auto-refresh.</div></details>
+      <details><summary>What do I need to run a bot?</summary><div>A Telegram account, a wallet you use only for the bot, and a computer or a cheap VPS that stays on. The setup option means we install and harden it on your VPS for you, so your keys still stay on your server.</div></details>
+      <details><summary>I sent the wrong amount, or my key hasn't arrived</summary><div>Payments are checked every few minutes. Type /status in the shop chat first. If you sent a different amount, or the key still hasn't come after 30 minutes, message <span class="contact">us</span> with your order id and the transaction link.</div></details>
+      <details><summary>How does the monthly dashboard plan renew?</summary><div>It doesn't renew automatically, because nothing is ever charged without you sending it. The shop bot reminds you 3 days before your key runs out. If you renew early, the new key adds 30 days on top of what you have left. You can also choose lifetime and never think about it again.</div></details>
+      <details><summary>Can a bot lose money?</summary><div>Yes. Providing liquidity can lose money, especially on volatile tokens: the price can move against your range, and past fees don't predict future ones. The bots manage positions, they don't guarantee profit. Start in paper mode, then go live with an amount you can afford to lose.</div></details>
+      <details><summary>Why Telegram?</summary><div>It's where the bots are controlled from, and it lets checkout work without accounts, cards or a server holding your data. All we see is your Telegram chat and the payment.</div></details>
+    </div>
+  </section>
 </main>
+
+<footer>
+  <div class="wrap">
+    <p>This is software, not an investment product or advice. You run it, you hold the keys, and you decide what it trades. Providing liquidity carries risk, including total loss.</p>
+    <p><span id="contact-line"></span><a href="{{REPO_URL}}">Source on GitHub</a></p>
+  </div>
+</footer>
+
 <script>
 (() => {
   const products = {{PRODUCTS_JSON}};
+  const site = {{SITE_JSON}};
   const bot = "{{SHOP_BOT}}";
   // ?ref=x tags the channel a buyer came from; it rides the Telegram start parameter into the order
   const ref = (new URLSearchParams(location.search).get("ref") || "").toLowerCase();
   const tag = /^[a-z0-9-]{1,16}$/.test(ref) ? `__${ref}` : "";
   const usd = (n) => "$" + (n % 1 ? n.toFixed(2) : n);
-  const g = document.getElementById("products");
-  for (const p of products) {
-    const el = document.createElement("div");
-    el.className = "card";
-    el.innerHTML = `<h2></h2><p></p><div class="price"></div><a class="buy"><button class="primary">Buy with USDC</button></a>`;
-    el.querySelector("h2").textContent = p.name;
-    el.querySelector("p").textContent = p.blurb;
-    el.querySelector(".price").innerHTML = `${usd(p.priceUsd)} <small>USDC, one-time</small>`;
-    el.querySelector("a").href = `https://t.me/${bot}?start=buy_${p.id}${tag}`;
-    g.append(el);
+  const buyUrl = (id) => `https://t.me/${bot}?start=buy_${id}${tag}`;
+  const h = (tagName, cls, text) => { const e = document.createElement(tagName); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  const term = (p) => (p.days ? `per ${p.days} days` : "one-time");
+
+  // a product's cheaper/pricier sibling shows as a second option on the same card
+  const VARIANT_OF = { "lp-bot-setup": ["lp-bot", "With VPS setup", "We install and harden it on your server"], "dlmm-agent-setup": ["dlmm-agent", "With VPS setup", "We install and harden it on your server"], "pnl-lifetime": ["pnl-pro", "Lifetime", "Pay once, never renew"] };
+  const GROUPS = [
+    { name: "Bots", intro: "Telegram-controlled bots that open, rebalance and close concentrated-liquidity positions for you.", ids: ["lp-bot", "dlmm-agent"] },
+    { name: "Dashboard", intro: "Every LP position across your wallets in one place: value, unclaimed fees and whether it's still in range.", ids: ["pnl-pro"], free: true },
+    { name: "Guides", intro: "Long-form, tested write-ups you read in the browser.", ids: ["flash-guide"] },
+  ];
+  const byId = new Map(products.map((p) => [p.id, p]));
+  const variants = new Map();
+  for (const p of products) if (VARIANT_OF[p.id] && byId.has(VARIANT_OF[p.id][0])) variants.set(VARIANT_OF[p.id][0], [...(variants.get(VARIANT_OF[p.id][0]) || []), p]);
+  const placed = new Set([...variants.values()].flat().map((p) => p.id));
+
+  const option = (p, label, note) => {
+    const o = h("div", "opt");
+    const w = h("div", "what", `${label} · ${usd(p.priceUsd)}`);
+    w.append(h("small", "", note || `USDC, ${term(p)}`));
+    const a = h("a", "btn primary small", "Buy");
+    a.href = buyUrl(p.id);
+    a.setAttribute("aria-label", `Buy ${p.name} for ${usd(p.priceUsd)}`);
+    o.append(w, a);
+    return o;
+  };
+  const card = (p) => {
+    const c = h("div", "card");
+    c.append(h("h4", "", p.name.replace(/\s*\((30 days|lifetime)\)$/, "")));
+    const pr = h("div", "price");
+    pr.append(h("b", "", usd(p.priceUsd)), h("span", "", `USDC, ${term(p)}`));
+    c.append(pr, h("p", "", p.blurb));
+    const vs = variants.get(p.id) || [];
+    if (!vs.length) {
+      const a = h("a", "btn primary", `Buy · ${usd(p.priceUsd)}`);
+      a.href = buyUrl(p.id);
+      c.append(a);
+    } else {
+      const opts = h("div", "opts");
+      opts.append(option(p, p.days ? `${p.days} days` : "Pro license", p.days ? "Reminder before it runs out; renewing early adds on" : "You install it; updates included"));
+      for (const v of vs) opts.append(option(v, VARIANT_OF[v.id][1], VARIANT_OF[v.id][2]));
+      c.append(opts);
+    }
+    placed.add(p.id);
+    return c;
+  };
+  const freeCard = () => {
+    const c = h("div", "card free");
+    c.append(h("h4", "", "Dashboard (free)"));
+    const pr = h("div", "price");
+    pr.append(h("b", "", "$0"), h("span", "", "no sign-up"));
+    c.append(pr, h("p", "", "One wallet: Uniswap v3/v4 on Robinhood Chain, Base and Arbitrum, and Meteora DLMM on Solana. Live value, unclaimed fees and range status, read straight from the chain in your browser."));
+    const a = h("a", "btn", "Open the dashboard");
+    a.href = "dashboard/";
+    c.append(a);
+    return c;
+  };
+
+  const root = document.getElementById("groups");
+  const addGroup = (name, intro, cards) => {
+    if (!cards.length) return;
+    const g = h("div", "group");
+    g.append(h("h3", "", name));
+    if (intro) g.append(h("p", "gintro", intro));
+    const grid = h("div", "grid");
+    grid.append(...cards);
+    g.append(grid);
+    root.append(g);
+  };
+  for (const g of GROUPS) {
+    const cards = g.ids.filter((id) => byId.has(id)).map((id) => card(byId.get(id)));
+    if (g.free) cards.unshift(freeCard());
+    addGroup(g.name, g.intro, cards);
+  }
+  addGroup("More", "", products.filter((p) => !placed.has(p.id)).map(card));
+
+  const addrs = [["Base", site.receivers.base], ["Solana", site.receivers.solana]].filter(([, a]) => a);
+  if (addrs.length) {
+    const ul = document.getElementById("addr-list");
+    for (const [chain, a] of addrs) {
+      const li = h("li", "", `USDC on ${chain}: `);
+      li.append(h("code", "", a));
+      ul.append(li);
+    }
+    document.getElementById("addr").hidden = false;
+  }
+  if (site.contact) {
+    for (const e of document.querySelectorAll(".contact")) e.textContent = site.contact;
+    document.getElementById("contact-line").textContent = `Questions: ${site.contact} · `;
   }
 })();
 </script>

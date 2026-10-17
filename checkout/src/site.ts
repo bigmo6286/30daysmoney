@@ -6,15 +6,31 @@ import fs from "node:fs";
 import path from "node:path";
 import { loadProducts } from "./config";
 
-export function renderStore(tpl: string, o: { products: { id: string; name: string; priceUsd: number; blurb: string }[]; shopBot: string; repoUrl: string; checkEveryMin: number }): string {
+export interface StoreOptions {
+  products: { id: string; name: string; priceUsd: number; blurb: string; days?: number }[];
+  shopBot: string;
+  repoUrl: string;
+  checkEveryMin: number;
+  /** seller contact, shown in the FAQ and footer */
+  contact?: string;
+  /** the shop's receiving addresses, so a buyer can check the one the bot gives them */
+  receivers?: { base?: string; solana?: string };
+}
+
+const json = (v: unknown) => JSON.stringify(v).replace(/</g, "\\u003c");
+
+export function renderStore(tpl: string, o: StoreOptions): string {
   if (!/^[A-Za-z0-9_]{5,32}$/.test(o.shopBot)) throw new Error("SHOP_BOT must be the shop bot's Telegram username, without @");
   // JSON inside <script>: escape "<" so a product text can never close the tag
-  const products = JSON.stringify(o.products.map(({ id, name, priceUsd, blurb }) => ({ id, name, priceUsd, blurb }))).replace(/</g, "\\u003c");
+  const products = json(o.products.map(({ id, name, priceUsd, blurb, days }) => ({ id, name, priceUsd, blurb, ...(days ? { days } : {}) })));
+  const site = json({ contact: o.contact ?? "", receivers: { base: o.receivers?.base || undefined, solana: o.receivers?.solana || undefined } });
+  // replacer functions: a "$&" in a product text must stay literal
   return tpl
-    .replace("{{PRODUCTS_JSON}}", products)
-    .replace("{{SHOP_BOT}}", o.shopBot)
-    .replace("{{REPO_URL}}", o.repoUrl.replace(/"/g, ""))
-    .replace("{{CHECK_EVERY_MIN}}", String(o.checkEveryMin));
+    .replaceAll("{{PRODUCTS_JSON}}", () => products)
+    .replaceAll("{{SITE_JSON}}", () => site)
+    .replaceAll("{{SHOP_BOT}}", () => o.shopBot)
+    .replaceAll("{{REPO_URL}}", () => o.repoUrl.replace(/"/g, ""))
+    .replaceAll("{{CHECK_EVERY_MIN}}", () => String(o.checkEveryMin));
 }
 
 if (process.argv[1] && /site\.[jt]s$/.test(process.argv[1])) {
@@ -25,6 +41,8 @@ if (process.argv[1] && /site\.[jt]s$/.test(process.argv[1])) {
     shopBot: (process.env.SHOP_BOT || "").replace(/^@/, "").trim(),
     repoUrl: process.env.REPO_URL || "https://github.com/bigmo6286/30daysmoney",
     checkEveryMin: Number(process.env.CHECK_EVERY_MIN || 15),
+    contact: (process.env.CONTACT || "").trim(),
+    receivers: { base: (process.env.BASE_RECEIVER || "").trim(), solana: (process.env.SOL_RECEIVER || "").trim() },
   });
   fs.mkdirSync(out, { recursive: true });
   fs.writeFileSync(path.join(out, "index.html"), html);
