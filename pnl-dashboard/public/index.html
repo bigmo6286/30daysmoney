@@ -94,7 +94,7 @@ tr:last-child td { border-bottom: 0; }
 
   function tiles(s) {
     const out = [];
-    for (const unit of ["ETH", "SOL"]) {
+    for (const unit of ["ETH", "SOL", "USD"]) {
       const t = s.totals[unit];
       const used = s.rows.some((r) => r.unit === unit);
       if (!used) continue;
@@ -117,7 +117,7 @@ tr:last-child td { border-bottom: 0; }
   function calendars(s) {
     const box = $("calendars");
     box.innerHTML = "";
-    for (const unit of ["ETH", "SOL"]) {
+    for (const unit of ["ETH", "SOL", "USD"]) {
       const days = s.daily.filter((d) => d.unit === unit);
       if (!days.length) continue;
       const by = new Map(days.map((d) => [d.day, d]));

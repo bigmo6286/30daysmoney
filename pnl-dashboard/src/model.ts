@@ -1,5 +1,5 @@
 /** One normalized row per position, whatever produced it. Amounts are in the pair's native unit. */
-export type Unit = "ETH" | "SOL";
+export type Unit = "ETH" | "SOL" | "USD";
 
 export interface Row {
   /** who opened it: one of our bots, or a position found in a watched wallet */
@@ -52,7 +52,7 @@ export interface Summary {
 const empty = (): UnitTotals => ({ openValue: 0, unclaimedFees: 0, unrealized: 0, realized: 0, closed: 0, wins: 0 });
 
 export function summarize(rows: Row[], warnings: string[] = [], at = Date.now()): Summary {
-  const totals: Record<Unit, UnitTotals> = { ETH: empty(), SOL: empty() };
+  const totals: Record<Unit, UnitTotals> = { ETH: empty(), SOL: empty(), USD: empty() };
   const daily = new Map<string, { day: string; unit: Unit; pnl: number; count: number }>();
   for (const r of rows) {
     const t = totals[r.unit];

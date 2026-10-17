@@ -17,6 +17,8 @@ export interface V3Chain {
   factory: string;
   positionManager: string;
   weth: string;
+  /** dollar stablecoins on this chain: pairs quoted in one are valued in USD */
+  stables?: { address: string; decimals: number }[];
 }
 
 const NPM_ABI = [
@@ -110,13 +112,24 @@ export async function readV3Positions(chain: V3Chain, owner: string, provider = 
   return out;
 }
 
+/** The side positions are valued in: WETH first (ETH), else a known stablecoin (USD). */
+export function quoteOf(chain: V3Chain, p: Pick<V3Position, "token0" | "token1">): { address: string; decimals: number; unit: "ETH" | "USD" } | null {
+  const has = (a: string) => p.token0.toLowerCase() === a.toLowerCase() || p.token1.toLowerCase() === a.toLowerCase();
+  if (has(chain.weth)) return { address: chain.weth, decimals: 18, unit: "ETH" };
+  const s = chain.stables?.find((x) => has(x.address));
+  return s ? { ...s, unit: "USD" } : null;
+}
+
 export function v3Rows(chain: V3Chain, owner: string, positions: V3Position[]): Row[] {
   return positions.map((p) => {
-    const value = valueInWeth(p, chain.weth, p.amount0 + p.fees0, p.amount1 + p.fees1);
-    const fees = valueInWeth(p, chain.weth, p.fees0, p.fees1);
-    const wethIs0 = p.token0.toLowerCase() === chain.weth.toLowerCase();
+    const q = quoteOf(chain, p);
+    const qa = q?.address ?? chain.weth;
+    const scale = 10 ** (q?.decimals ?? 18);
+    const value = q ? valueInWeth(p, qa, p.amount0 + p.fees0, p.amount1 + p.fees1) : null;
+    const fees = q ? valueInWeth(p, qa, p.fees0, p.fees1) : null;
+    const wethIs0 = p.token0.toLowerCase() === qa.toLowerCase();
     const oneToken = 10n ** BigInt(wethIs0 ? p.decimals1 : p.decimals0);
-    const price = valueInWeth(p, chain.weth, wethIs0 ? 0n : oneToken, wethIs0 ? oneToken : 0n);
+    const price = q ? valueInWeth(p, qa, wethIs0 ? 0n : oneToken, wethIs0 ? oneToken : 0n) : null;
     return {
       source: "wallet",
       chain: chain.name,
@@ -124,12 +137,12 @@ export function v3Rows(chain: V3Chain, owner: string, positions: V3Position[]): 
       id: p.tokenId,
       pair: `${wethIs0 ? p.symbol1 : p.symbol0}/${wethIs0 ? p.symbol0 : p.symbol1} ${p.fee / 10_000}%`,
       status: "open",
-      unit: "ETH",
-      valueNative: value === null ? undefined : Number(value) / 1e18,
-      feesNative: fees === null ? undefined : Number(fees) / 1e18,
+      unit: q?.unit ?? "ETH",
+      valueNative: value === null ? undefined : Number(value) / scale,
+      feesNative: fees === null ? undefined : Number(fees) / scale,
       inRange: p.tick >= p.tickLower && p.tick < p.tickUpper,
-      tokenPriceNative: price === null ? undefined : Number(price) / 1e18,
-      note: value === null ? "not a WETH pair: not valued" : undefined,
+      tokenPriceNative: price === null ? undefined : Number(price) / scale,
+      note: value === null ? "neither WETH nor a known stablecoin: not valued" : undefined,
     } satisfies Row;
   });
 }

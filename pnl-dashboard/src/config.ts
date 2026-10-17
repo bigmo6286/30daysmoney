@@ -12,6 +12,7 @@ export const V3_CHAINS: Record<string, Omit<V3Chain, "rpcUrl"> & { rpcUrl: strin
     factory: "0x1f7d7550b1b028f7571e69a784071f0205fd2efa",
     positionManager: "0x73991a25c818bf1f1128deaab1492d45638de0d3",
     weth: "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+    stables: [{ address: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168", decimals: 6 }], // USDG
   },
   base: {
     name: "Base",
@@ -20,6 +21,7 @@ export const V3_CHAINS: Record<string, Omit<V3Chain, "rpcUrl"> & { rpcUrl: strin
     factory: "0x33128a8fC17869897dcE68Ed026d694621f6FDfD",
     positionManager: "0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1",
     weth: "0x4200000000000000000000000000000000000006",
+    stables: [{ address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", decimals: 6 }], // USDC
   },
   arbitrum: {
     name: "Arbitrum One",
@@ -28,6 +30,7 @@ export const V3_CHAINS: Record<string, Omit<V3Chain, "rpcUrl"> & { rpcUrl: strin
     factory: "0x1F98431c8aD98523631AE4a59f267346ea31F984",
     positionManager: "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
     weth: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+    stables: [{ address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", decimals: 6 }], // USDC
   },
 };
 
