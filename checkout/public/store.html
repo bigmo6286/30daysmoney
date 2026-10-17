@@ -69,6 +69,9 @@ a { color: var(--accent); }
 (() => {
   const products = {{PRODUCTS_JSON}};
   const bot = "{{SHOP_BOT}}";
+  // ?ref=x tags the channel a buyer came from; it rides the Telegram start parameter into the order
+  const ref = (new URLSearchParams(location.search).get("ref") || "").toLowerCase();
+  const tag = /^[a-z0-9-]{1,16}$/.test(ref) ? `__${ref}` : "";
   const usd = (n) => "$" + (n % 1 ? n.toFixed(2) : n);
   const g = document.getElementById("products");
   for (const p of products) {
@@ -78,7 +81,7 @@ a { color: var(--accent); }
     el.querySelector("h2").textContent = p.name;
     el.querySelector("p").textContent = p.blurb;
     el.querySelector(".price").innerHTML = `${usd(p.priceUsd)} <small>USDC, one-time</small>`;
-    el.querySelector("a").href = `https://t.me/${bot}?start=buy_${p.id}`;
+    el.querySelector("a").href = `https://t.me/${bot}?start=buy_${p.id}${tag}`;
     g.append(el);
   }
 })();
