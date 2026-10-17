@@ -110,6 +110,26 @@ describe("uniswap v3 valuation", () => {
   });
 });
 
+describe("stablecoin pairs (Robinhood Chain's USDG stock pairs)", () => {
+  const USDG = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
+  const chain: V3Chain = { name: "Robinhood Chain", chainId: 4663, rpcUrl: "", factory: "", positionManager: "", weth: "0xee00000000000000000000000000000000000000", stables: [{ address: USDG, decimals: 6 }] };
+  // NVDA (18 dec) is token0, USDG (6 dec) token1, NVDA = $200 → raw price = 200e6 / 1e18
+  const sqrt = BigInt(Math.round(Math.sqrt(200e6 / 1e18) * 2 ** 48)) * (1n << 48n);
+  const base = { tokenId: "1", token0: "0x0000000000000000000000000000000000000aaa", token1: USDG, symbol0: "NVDA", symbol1: "USDG", decimals0: 18, decimals1: 6, fee: 500, tickLower: -10, tickUpper: 10, tick: 0, liquidity: 1n, fees0: 0n, fees1: 1_000_000n, sqrtPriceX96: sqrt };
+  it("values them in USD, fees included", () => {
+    const [r] = v3Rows(chain, "0xme", [{ ...base, amount0: 10n ** 18n, amount1: 300_000_000n }]);
+    expect(r).toMatchObject({ unit: "USD", pair: "NVDA/USDG 0.05%" });
+    expect(r!.valueNative!).toBeCloseTo(200 + 300 + 1, 3);
+    expect(r!.feesNative!).toBeCloseTo(1, 6);
+    expect(r!.tokenPriceNative!).toBeCloseTo(200, 3);
+  });
+  it("refuses a lookalike 'USDG' at another address", () => {
+    const [r] = v3Rows(chain, "0xme", [{ ...base, token1: "0x000000000000000000000000000000000000bad1", amount0: 1n, amount1: 1n }]);
+    expect(r!.valueNative).toBeUndefined();
+    expect(r!.note).toMatch(/not valued/);
+  });
+});
+
 describe("dlmm valuation", () => {
   it("bin price and SOL value", () => {
     expect(binPrice(0, 100, 9, 9)).toBe(1);

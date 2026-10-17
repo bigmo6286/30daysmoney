@@ -18,7 +18,7 @@ Rebuild of FlipZ3ro's poolpnl, which only covered Uniswap v4 on Robinhood Chain 
 |---|---|---|
 | lp-bot book (`LPBOT_DATA`) | exact, recorded at open | on-chain, when the bot wallet is in `WALLETS`; includes tokens left in the wallet and fees already collected, so it matches the bot's own `/list` |
 | dlmm-agent book (`DLMM_DATA`) | exact | on-chain via the Meteora SDK when the wallet is listed |
-| any EVM wallet | unknown (shows value and fees, no PnL) | NonfungiblePositionManager: amounts at the current price + a static `collect` for unclaimed fees, in ETH for WETH pairs |
+| any EVM wallet | unknown (shows value and fees, no PnL) | NonfungiblePositionManager: amounts at the current price + a static `collect` for unclaimed fees, in ETH for WETH pairs and in USD for pairs quoted in a known stablecoin (USDG on Robinhood Chain, USDC on Base/Arbitrum; lookalikes at other addresses are not valued) |
 | any Solana wallet | unknown | Meteora SDK `getAllLbPairPositionsByUser`, in SOL for SOL pairs |
 
 Paper positions are listed with their deposit; their live value is in the bot.
