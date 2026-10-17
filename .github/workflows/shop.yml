@@ -1,0 +1,60 @@
+# The serverless shop: every 5 minutes, answer the shop bot's Telegram messages, read new USDC
+# payments, issue license keys and DM them to buyers. State (orders, cursors) is carried between
+# runs in the Actions cache, encrypted with a key derived from LICENSE_PRIVATE_KEY.
+# Off until the repo variable SHOP_ENABLED is "true". Setup: checkout/README.md#serverless-shop
+name: shop
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+concurrency:
+  group: shop
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  tick:
+    if: vars.SHOP_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: checkout
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: checkout/package-lock.json
+      - run: npm ci
+      - uses: actions/cache/restore@v4
+        with:
+          path: shop-state.bin
+          key: shop-state-${{ github.run_id }}
+          restore-keys: shop-state-
+      - id: unpack
+        run: npm run -s state -- unpack ../shop-state.bin data
+        env:
+          LICENSE_PRIVATE_KEY: ${{ secrets.LICENSE_PRIVATE_KEY }}
+      - run: npm run -s tick
+        env:
+          SHOP_TG_TOKEN: ${{ secrets.SHOP_TG_TOKEN }}
+          LICENSE_PRIVATE_KEY: ${{ secrets.LICENSE_PRIVATE_KEY }}
+          ALCHEMY_KEY: ${{ secrets.ALCHEMY_KEY }}
+          TG_OWNER_ID: ${{ secrets.TG_OWNER_ID }}
+          SOL_RECEIVER: ${{ vars.SOL_RECEIVER }}
+          BASE_RECEIVER: ${{ vars.BASE_RECEIVER }}
+          CONTACT: ${{ vars.CONTACT }}
+          CHECK_EVERY_MIN: "5"
+      # save even if the tick failed halfway (it records progress as it goes), but never after a
+      # failed unpack: that would replace the real orders with an empty book
+      - if: always() && steps.unpack.outcome == 'success'
+        run: npm run -s state -- pack data ../shop-state.bin
+        env:
+          LICENSE_PRIVATE_KEY: ${{ secrets.LICENSE_PRIVATE_KEY }}
+      - if: always() && steps.unpack.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: shop-state.bin
+          key: shop-state-${{ github.run_id }}-${{ github.run_attempt }}

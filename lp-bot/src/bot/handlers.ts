@@ -101,11 +101,11 @@ export class Handlers {
   }
 
   private async startOpen(token: string) {
-    const msg = await this.tg.send("🔎 Looking for WETH pools…");
+    const msg = await this.tg.send("🔎 Looking for ETH pools (v3 + v4)…");
     const pools = await this.lp.findPools(token);
-    if (!pools.length) return void (await this.tg.edit(msg.message_id, "No WETH pool with liquidity on the configured fee tiers."));
+    if (!pools.length) return void (await this.tg.edit(msg.message_id, "No ETH pool with liquidity on the configured fee tiers (v3 WETH pools, and v4 native-ETH pools without hooks)."));
     this.draft = { pools };
-    const kb: Keyboard = pools.map((p, i) => [{ text: `${feeTier(p.fee)} · ${eth(p.quoteReserve, 3)} ETH depth`, data: `p:${i}` }]);
+    const kb: Keyboard = pools.map((p, i) => [{ text: `${p.version === 4 ? "v4 " : "v3 "}${feeTier(p.fee)} · ${eth(p.quoteReserve, 3)} ETH depth`, data: `p:${i}` }]);
     kb.push([{ text: "✖ Cancel", data: "x" }]);
     const t = pools[0]!.token;
     const screen = await this.screenLine(token, pools[0]!);
@@ -224,7 +224,7 @@ export class Handlers {
     const ms = Date.now() - r.openedAt;
     const perHour = ms > 60_000 ? (s.pnl.feesQuote * 3_600_000n) / BigInt(ms) : 0n;
     return [
-      `${s.inRange ? "🟢" : "🔴"} <b>${esc(r.symbol)}</b> · ${feeTier(r.fee)} · #${esc(r.id)}${r.kind === "paper" ? " <i>paper</i>" : ""}`,
+      `${s.inRange ? "🟢" : "🔴"} <b>${esc(r.symbol)}</b> · ${r.version === 4 ? "v4 " : ""}${feeTier(r.fee)} · #${esc(r.id)}${r.kind === "paper" ? " <i>paper</i>" : ""}`,
       `   value ${eth(s.pnl.valueQuote)} ETH · fees ${eth(s.pnl.feesQuote)}${r.kind === "paper" ? " (est.)" : ""}`,
       `   PnL ${signedEth(s.pnl.pnlQuote)} (${pct(s.pnl.pnlPct)}) · vs HODL ${signedEth(s.pnl.vsHodlQuote)}`,
       `   range ${price(Math.min(lo, hi))} → ${price(Math.max(lo, hi))} · now ${price(now)}`,

@@ -58,4 +58,21 @@ Week 1: first sale · Week 2: $500 · Week 3: $1,200 · Week 4: $2,000
 - `pnl-dashboard/`: rebuild of poolpnl. Bot books + any wallet's Uniswap v3 (EVM) and Meteora DLMM (Solana) positions, daily PnL calendar, CSV. Cross-checked against lp-bot on a local Uniswap v3 chain to 1e-9 ETH.
 - `flash-kit/`: rebuild of RobinArb / rh-flash-toolkit / morpho-toolkit. Morpho flash loan → two-pool Uniswap v3 arb with an on-chain profit-or-revert executor (fixes the drainable callback in rh-flash-toolkit). Proven end to end on a local chain. Not yet rebuilt: kamino-tools (Solana) and the RobinFun ↔ v4 route.
 
-**Still needed (owner):** a Telegram bot token + a burner wallet with a little ETH on Robinhood Chain for the first mainnet run; a domain for `checkout/` (USDC on Base goes to 0x51F0…67A7); a Solana RPC (Helius free tier is fine) for the dlmm-agent paper run.
+- **First live runs** (Alchemy key, all networks enabled). Every product read real mainnet data; four bugs only mainnet could show, all fixed and tested:
+  - `dlmm-agent`: Meteora's API nests the bin step, so every pool read as bin step 0 and **the agent could never open anything**. After the fix, `npm run smoke` goes discovery → gates → Jev → paper open → value → close on mainnet.
+  - `checkout`: Alchemy's free tier allows only 10 blocks per `eth_getLogs` call, and the Base watcher stopped shrinking at 50, so with the key it would have **missed every Base payment**. It now goes down to 10, checked on live Base.
+  - `lp-bot`: the same 10-block limit broke the pool scanner. It now reads logs from the public RPC and everything else from Alchemy. `npm run smoke` passed on Robinhood Chain (247 pools, Jev, paper open/close; Telegram token checked).
+  - `pnl-dashboard`: read a wallet's oldest 200 NFTs, so it missed live positions in bot wallets (one holds ~15k). Now reads the newest first, in parallel, retrying on rate limits. The Solana reader read real LP wallets for the first time (on the public RPC; Alchemy's free tier refuses that scan).
+  - `flash-kit`: mainnet-fork suite against the **real Morpho Blue + Uniswap v3** (it was only tested against a mock before): exact simulated profit paid, Morpho left whole, CLI end to end. Live: Morpho can lend 26.7 WETH on Robinhood Chain, 82k on Base.
+- One RPC key for everything: `ALCHEMY_KEY` is now read by lp-bot, dlmm-agent, flash-kit and pnl-dashboard (EVM), as it already was by checkout.
+
+- **Pro licenses:** lp-bot and dlmm-agent check checkout's signed key offline. Free tier: manual LP, paper mode, alerts, stop loss. Pro: autopilot, auto-rebalance (lp-bot), daily reports.
+- **lp-bot on Uniswap v4** (Robinhood Chain): native-ETH, hookless pools through the real PositionManager / UniversalRouter / Permit2, proven on a mainnet fork. Live finding: some hookless pools can't be quoted at all, so discovery skips them.
+- **Serverless shop:**
+  - a store page on GitHub Pages;
+  - a Telegram shop bot as the checkout;
+  - a scheduled GitHub Action every 5 min: watch payments, issue keys, DM them;
+  - state encrypted in the Actions cache.
+  - No server or domain to pay for. Checked end to end against a fake Telegram and live Base.
+
+**Still needed (owner):** a burner wallet with a little ETH on Robinhood Chain for the first live (non-paper) run; a second Telegram bot for the shop, and the GitHub secrets/variables in checkout/README.md#serverless-shop (USDC on Base goes to 0x51F0…67A7). A Telegram bot (@thirtydaysmoney_bot) and the RPC are in place.

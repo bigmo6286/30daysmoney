@@ -27,6 +27,27 @@ Runs on **Robinhood Chain** by default; **Base** and **Arbitrum** are built in, 
    - 🎯 **In-range**: ±`widthPct` around the price. The bot swaps the right share of ETH into the token first (best fee tier), then mints. Fees start immediately, but you carry token risk.
 5. Confirm.
 
+## Uniswap v4
+
+On Robinhood Chain the bot also LPs in **Uniswap v4** pools. v4 has more trading there than v3. Paste a token and the pool picker lists v3 and v4 pools side by side; open, `/list`, collect, close, rebalance, the monitor and paper mode all work the same.
+
+- **Native-ETH pools without hooks only.** ETH is the bot's quote currency. A hook is arbitrary code that runs on every swap and liquidity change, so hooked pools are refused, even when pasted by pool id.
+- **Pools the V4Quoter can't price are skipped.** Some live pools revert `NotEnoughLiquidity` both ways, and a pool you can't price a sell on is one you might not get out of.
+- **How it trades:** swaps go through the UniversalRouter, positions through the v4 PositionManager. Both pull tokens via Permit2 with **exact** amounts that expire in an hour; nothing unlimited is left approved. Fees are read from StateView (fee growth inside the range minus the position's last snapshot).
+- **Not yet:** the autopilot's scanner indexes v3 pools only.
+
+Tested against the real v4 contracts on a Robinhood Chain fork (`ALCHEMY_KEY=… npx vitest run test/integration/v4fork.test.ts`, pinned block 90,849,900):
+- the pool is found from a pasted token, and a pasted pool id resolves; a hooked pool is refused;
+- live in-range open: swap via the router, mint via the PositionManager, the NFT is owned by the bot, unused ETH comes back;
+- another wallet's trades earn fees, and `collect` pays exactly the fees computed from StateView, to the wei;
+- close burns the NFT and sells the token back into the same pool, leaving no token behind;
+- single-sided open and close;
+- paper mode on the same pool sends nothing.
+
+## Free and Pro
+
+Free: everything you drive yourself, plus paper mode, range alerts, stop loss and take profit (safety is never paywalled). **Pro** (a `LICENSE_KEY` from [the store](https://bigmo6286.github.io/30daysmoney/)) adds the autopilot (`/auto`), auto-rebalance and the daily report. The key is checked offline against the seller's public key in `src/license.ts`; the bot never phones home. Without a key those settings read as off and `/set` refuses to turn them on.
+
 ## Commands
 
 | Command | |
@@ -77,10 +98,15 @@ A blocked token goes on cooldown for `autoCooldownHours`. If Jev can't be reache
 You need Node 20+ (or Docker), a Telegram bot token from [@BotFather](https://t.me/BotFather), and your numeric Telegram id from [@userinfobot](https://t.me/userinfobot).
 
 ```bash
-cp .env.example .env     # fill in TG_TOKEN and TG_OWNER_ID, leave MODE=paper
+cp .env.example .env     # fill in TG_TOKEN and TG_OWNER_ID (and ALCHEMY_KEY if you have one), leave MODE=paper
 npm install
+npm run smoke            # one paper pass on the real chain: RPC, Telegram token, scan, round trip, Jev, open/close
 npm start
 ```
+
+`npm run smoke` sends no Telegram message and signs nothing; it uses a throwaway data directory. With `ALCHEMY_KEY` set, reads and sends go through Alchemy and the pool scanner's `eth_getLogs` stays on the chain's public RPC, because Alchemy's free tier allows only 10 blocks per `eth_getLogs` call (`LOGS_RPC_URL` overrides this).
+
+Live check (Oct 17, Robinhood Chain): 247 active WETH pools indexed from 30k blocks of Swap logs, round trips on the deepest pools, Jev refused USDG (rug signs 84%: it is a regulated stablecoin with freeze/blacklist powers, so this is a false positive, and harmless here), and PIPEDOG (risk 2%) went through paper open → value from chain → close.
 
 Send `/start` to your bot. When you're ready for real funds, create a **fresh wallet** for the bot, fund it on the chain you use, set `MODE=live` and `WALLET_KEY`, and restart.
 

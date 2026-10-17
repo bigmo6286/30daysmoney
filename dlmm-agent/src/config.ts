@@ -5,6 +5,7 @@
  */
 import path from "node:path";
 import { z } from "zod";
+import { proOnly } from "./license";
 import { readJson, writeJsonAtomic } from "./store";
 
 export const SettingsSchema = z.object({
@@ -97,13 +98,16 @@ export interface AppConfig {
   tgOwnerId: string;
   dataDir: string;
   jupiterKey: string;
+  /** Pro license from checkout; empty = free tier */
+  licenseKey: string;
   typesafeKey: string;
   jevModel: string;
 }
 
 export function loadConfig(e: NodeJS.ProcessEnv = process.env): AppConfig {
   const mode: Mode = (e.MODE || "paper").toLowerCase() === "live" ? "live" : "paper";
-  const rpcUrl = (e.RPC_URL || "https://api.mainnet-beta.solana.com").trim();
+  const alchemyKey = (e.ALCHEMY_KEY || "").trim();
+  const rpcUrl = (e.RPC_URL || (alchemyKey ? `https://solana-mainnet.g.alchemy.com/v2/${alchemyKey}` : "https://api.mainnet-beta.solana.com")).trim();
   const walletKey = (e.WALLET_KEY || "").trim();
   if (mode === "live" && !walletKey) {
     throw new Error("MODE=live needs WALLET_KEY (base58 secret key or a JSON byte array). Use a dedicated wallet, never your main one.");
@@ -122,17 +126,31 @@ export function loadConfig(e: NodeJS.ProcessEnv = process.env): AppConfig {
     tgOwnerId,
     dataDir: path.resolve(e.DATA_DIR || "data"),
     jupiterKey: (e.JUPITER_API_KEY || "").trim(),
+    licenseKey: (e.LICENSE_KEY || "").trim(),
     typesafeKey: (e.TYPESAFE_API_KEY || "").trim(),
     jevModel: (e.JEV_MODEL || "jev-latest").trim(),
   };
 }
 
+/** Settings only a Pro license can turn on, with how to name them to the user. */
+export const PRO_SETTINGS: Partial<Record<keyof Settings, string>> = { autoEnabled: "The autopilot", dailyReport: "The daily report" };
+
 export class SettingsStore {
   private file: string;
-  value: Settings;
-  constructor(dataDir: string) {
+  private raw: Settings;
+  /** `pro` false: the Pro settings read as off and can't be switched on (the saved file keeps them) */
+  constructor(
+    dataDir: string,
+    private readonly pro = true,
+  ) {
     this.file = path.join(dataDir, "settings.json");
-    this.value = SettingsSchema.parse(readJson(this.file, {}));
+    this.raw = SettingsSchema.parse(readJson(this.file, {}));
+  }
+  get value(): Settings {
+    if (this.pro) return this.raw;
+    const v = { ...this.raw } as Record<string, unknown>;
+    for (const k of Object.keys(PRO_SETTINGS)) v[k] = false;
+    return v as Settings;
   }
   /** Set one key from a Telegram string ("20", "on", "4h"). Returns the parsed value. */
   set(key: string, raw: string): unknown {
@@ -143,8 +161,10 @@ export class SettingsStore {
     if (typeof cur === "boolean") v = /^(1|on|true|yes)$/i.test(raw) ? true : /^(0|off|false|no)$/i.test(raw) ? false : raw;
     else if (typeof cur === "string") v = raw;
     else v = Number(raw);
-    const next = SettingsSchema.parse({ ...this.value, [key]: v });
-    this.value = next;
+    const what = PRO_SETTINGS[key as keyof Settings];
+    if (!this.pro && what && v === true) throw new Error(proOnly(what));
+    const next = SettingsSchema.parse({ ...this.raw, [key]: v });
+    this.raw = next;
     writeJsonAtomic(this.file, next);
     return (next as Record<string, unknown>)[key];
   }

@@ -14,15 +14,17 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run test/unit",
     "test:integration": "vitest run test/integration",
-    "test:all": "vitest run"
+    "test:all": "vitest run",
+    "smoke": "node --env-file-if-exists=.env --import tsx src/smoke.ts"
   },
   "dependencies": {
     "@uniswap/sdk-core": "^7.19.4",
     "@uniswap/v3-sdk": "^3.31.5",
+    "@uniswap/v4-sdk": "^2.4.1",
     "ethers": "^6.17.0",
     "jsbi": "^3.2.5",
-    "zod": "^3.25.76",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

@@ -1,7 +1,7 @@
 {
   "name": "flash-kit",
   "version": "0.1.0",
-  "description": "Flash-loan arbitrage toolkit for EVM chains: Morpho flash liquidity, two-pool Uniswap v3 arbitrage with an on-chain profit-or-revert executor, quote \u2192 simulate \u2192 execute",
+  "description": "Flash-loan arbitrage toolkit for EVM chains: Morpho flash liquidity, two-pool Uniswap v3 arbitrage with an on-chain profit-or-revert executor, quote → simulate → execute",
   "type": "module",
   "license": "UNLICENSED",
   "private": true,
@@ -13,7 +13,8 @@
     "compile": "node --import tsx scripts/compile.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run test/unit",
-    "test:integration": "vitest run test/integration"
+    "test:integration": "vitest run test/integration",
+    "test:fork": "vitest run test/fork"
   },
   "dependencies": {
     "ethers": "^6.17.0",

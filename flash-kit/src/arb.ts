@@ -11,6 +11,8 @@ export interface ChainCfg {
   name: string;
   chainId: number;
   rpcUrl: string;
+  /** Alchemy network slug, used instead of rpcUrl when ALCHEMY_KEY is set */
+  alchemy?: string;
   morpho: string;
   swapRouter02: string;
   quoterV2: string;
@@ -24,6 +26,7 @@ export const CHAINS: Record<string, ChainCfg> = {
     name: "Robinhood Chain",
     chainId: 4663,
     rpcUrl: "https://rpc.mainnet.chain.robinhood.com",
+    alchemy: "robinhood-mainnet",
     morpho: "0x9D53d5E3bd5E8d4Cbfa6DB1ca238AEA02E651010",
     swapRouter02: "0xcaf681a66d020601342297493863e78c959e5cb2",
     quoterV2: "0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7",
@@ -34,6 +37,7 @@ export const CHAINS: Record<string, ChainCfg> = {
     name: "Base",
     chainId: 8453,
     rpcUrl: "https://mainnet.base.org",
+    alchemy: "base-mainnet",
     morpho: "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
     swapRouter02: "0x2626664c2603336E57B271c5C0b26F421741e481",
     quoterV2: "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a",
@@ -44,6 +48,7 @@ export const CHAINS: Record<string, ChainCfg> = {
     name: "Ethereum",
     chainId: 1,
     rpcUrl: "https://ethereum-rpc.publicnode.com",
+    alchemy: "eth-mainnet",
     morpho: "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
     swapRouter02: "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
     quoterV2: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",

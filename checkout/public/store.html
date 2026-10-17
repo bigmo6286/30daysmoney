@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>30daysmoney bots</title>
+<meta name="description" content="Self-hosted liquidity bots for Uniswap v3/v4 and Meteora DLMM. Paper mode first, your keys stay on your server. Pay once in USDC.">
+<style>
+:root {
+  --bg: #f7f7f5; --panel: #ffffff; --ink: #16181d; --muted: #5d6470; --line: #e3e4e8;
+  --accent: #2f6df6; --accent-ink: #ffffff; --ok: #138a52; --warn: #a3620b;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f1115; --panel: #171a21; --ink: #eceef2; --muted: #9aa3b2; --line: #2a2f3a; --accent: #6d97ff; --accent-ink: #0f1115; --ok: #4cc38a; --warn: #e2a64b; }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 980px; margin: 0 auto; padding: 40px 16px 64px; }
+h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.15; margin: 0 0 12px; letter-spacing: -0.02em; }
+.lead { color: var(--muted); max-width: 640px; margin: 0 0 28px; }
+.points { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0 0 32px; padding: 0; list-style: none; color: var(--muted); font-size: 14px; }
+.points li::before { content: "✓ "; color: var(--ok); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+.card h2 { font-size: 18px; margin: 0; }
+.card p { margin: 0; color: var(--muted); font-size: 14px; flex: 1; }
+.price { font-size: 24px; font-weight: 650; }
+.price small { font-size: 13px; color: var(--muted); font-weight: 500; }
+button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 10px 14px; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button:disabled { opacity: .6; cursor: default; }
+.fine { color: var(--muted); font-size: 13px; margin-top: 36px; max-width: 720px; }
+dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--ink); padding: 0; width: min(520px, calc(100vw - 32px)); }
+dialog::backdrop { background: rgba(0,0,0,.45); }
+.dlg { padding: 22px; display: flex; flex-direction: column; gap: 14px; }
+.dlg h3 { margin: 0; font-size: 19px; }
+label { font-size: 14px; color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
+input, select { font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.row { display: flex; gap: 8px; align-items: center; }
+.row { align-items: stretch; }
+.row > * { flex: 1; }
+.box { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--bg); }
+.k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; overflow-wrap: anywhere; }
+.big { font-size: 22px; font-weight: 650; }
+.copy { flex: 0 0 auto; padding: 6px 10px; font-size: 13px; }
+.status { font-size: 14px; }
+.status.ok { color: var(--ok); }
+.status.warn { color: var(--warn); }
+.err { color: var(--warn); font-size: 14px; min-height: 1em; }
+a.buy { display: block; }
+a.buy button { width: 100%; }
+a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Liquidity bots you run yourself</h1>
+  <p class="lead">Telegram-controlled bots for Uniswap v3 and v4 (Robinhood Chain, Base, Arbitrum) and Meteora DLMM (Solana). They start in paper mode, simulate every transaction before sending it, and run on your server with your keys. We never hold your funds.</p>
+  <ul class="points">
+    <li>Paper mode by default</li><li>Simulated before sent</li><li>Stop loss on by default</li><li>Token screening</li><li>Pay once in USDC</li>
+  </ul>
+  <div class="grid" id="products"></div>
+  <p class="fine"><b>How buying works:</b> “Buy” opens our shop bot on Telegram. Pick Solana or Base, and it gives you an exact USDC amount and our address. Send that exact amount from your own wallet; your license key arrives in the same chat within about {{CHECK_EVERY_MIN}} minutes. The free version of every bot is on <a href="{{REPO_URL}}">GitHub</a>; the key unlocks the Pro features.</p>
+  <p class="fine">This is software, not an investment product. Providing liquidity can lose money, especially on volatile tokens; past fees don't predict future ones. You run the bot, you hold the keys, you decide what it trades.</p>
+</main>
+<script>
+(() => {
+  const products = {{PRODUCTS_JSON}};
+  const bot = "{{SHOP_BOT}}";
+  const usd = (n) => "$" + (n % 1 ? n.toFixed(2) : n);
+  const g = document.getElementById("products");
+  for (const p of products) {
+    const el = document.createElement("div");
+    el.className = "card";
+    el.innerHTML = `<h2></h2><p></p><div class="price"></div><a class="buy"><button class="primary">Buy with USDC</button></a>`;
+    el.querySelector("h2").textContent = p.name;
+    el.querySelector("p").textContent = p.blurb;
+    el.querySelector(".price").innerHTML = `${usd(p.priceUsd)} <small>USDC, one-time</small>`;
+    el.querySelector("a").href = `https://t.me/${bot}?start=buy_${p.id}`;
+    g.append(el);
+  }
+})();
+</script>
+</body>
+</html>

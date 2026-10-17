@@ -61,11 +61,49 @@ export function valueInWeth(p: Pick<V3Position, "token0" | "token1" | "sqrtPrice
   return null;
 }
 
+/** position NFTs read per wallet (newest first) */
+const MAX_IDS = 200;
+const READ_CONCURRENCY = 6;
+
+const rateLimited = (e: unknown) => {
+  const x = e as { info?: { error?: { code?: number } }; error?: { code?: number }; message?: string };
+  return x?.info?.error?.code === 429 || x?.error?.code === 429 || /\b429\b|compute units per second|rate limit/i.test(x?.message ?? "");
+};
+
+/** Retry a read that hit a provider's rate limit (Alchemy's free tier caps compute units per second). */
+async function withRetry<T>(f: () => Promise<T>, tries = 5): Promise<T> {
+  for (let i = 0; ; i++) {
+    try {
+      return await f();
+    } catch (e) {
+      if (i >= tries - 1 || !rateLimited(e)) throw e;
+      await new Promise((r) => setTimeout(r, 250 * 2 ** i + Math.random() * 100));
+    }
+  }
+}
+
+/** f over items with at most `n` in flight, results in order. */
+async function mapLimited<T, R>(items: T[], n: number, f: (t: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(n, items.length) }, async () => {
+      while (next < items.length) {
+        const i = next++;
+        out[i] = await withRetry(() => f(items[i]!));
+      }
+    }),
+  );
+  return out;
+}
+
 export async function readV3Positions(chain: V3Chain, owner: string, provider = new ethers.JsonRpcProvider(chain.rpcUrl, chain.chainId, { staticNetwork: true })): Promise<V3Position[]> {
   const npm = new ethers.Contract(chain.positionManager, NPM_ABI, provider);
   const factory = new ethers.Contract(chain.factory, FACTORY_ABI, provider);
-  const n = Number(await npm.getFunction("balanceOf")(owner));
-  const ids = await Promise.all(Array.from({ length: Math.min(n, 200) }, (_, i) => npm.getFunction("tokenOfOwnerByIndex")(owner, i) as Promise<bigint>));
+  const n = Number(await withRetry(() => npm.getFunction("balanceOf")(owner)));
+  // highest index first (roughly newest): bots that never burn pile up thousands of emptied NFTs (one live Robinhood wallet
+  // holds ~15k), and the live positions are the recent ones
+  const ids = await mapLimited(Array.from({ length: Math.min(n, MAX_IDS) }, (_, i) => n - 1 - i), READ_CONCURRENCY, (i) => npm.getFunction("tokenOfOwnerByIndex")(owner, i) as Promise<bigint>);
   const meta = new Map<string, { decimals: number; symbol: string }>();
   const tokenMeta = async (addr: string) => {
     const k = addr.toLowerCase();
@@ -76,12 +114,11 @@ export async function readV3Positions(chain: V3Chain, owner: string, provider = 
     }
     return meta.get(k)!;
   };
-  const out: V3Position[] = [];
-  for (const id of ids) {
+  const read = async (id: bigint): Promise<V3Position | null> => {
     const p = await npm.getFunction("positions")(id);
     const [fees0, fees1] = (await npm.getFunction("collect").staticCall({ tokenId: id, recipient: owner, amount0Max: MAX128, amount1Max: MAX128 }, { from: owner })) as [bigint, bigint];
     const liquidity = BigInt(p.liquidity);
-    if (liquidity === 0n && fees0 === 0n && fees1 === 0n) continue; // emptied position NFT
+    if (liquidity === 0n && fees0 === 0n && fees1 === 0n) return null; // emptied position NFT
     const poolAddr: string = await factory.getFunction("getPool")(p.token0, p.token1, p.fee);
     const pool = new ethers.Contract(poolAddr, POOL_ABI, provider);
     const [slot0, poolLiq, m0, m1] = await Promise.all([pool.getFunction("slot0")(), pool.getFunction("liquidity")(), tokenMeta(p.token0), tokenMeta(p.token1)]);
@@ -89,7 +126,7 @@ export async function readV3Positions(chain: V3Chain, owner: string, provider = 
     const t1 = new Token(chain.chainId, p.token1, m1.decimals, m1.symbol);
     const sdkPool = new Pool(t0, t1, Number(p.fee), JSBI.BigInt(slot0.sqrtPriceX96.toString()), JSBI.BigInt(poolLiq.toString()), Number(slot0.tick));
     const pos = new Position({ pool: sdkPool, liquidity: JSBI.BigInt(liquidity.toString()), tickLower: Number(p.tickLower), tickUpper: Number(p.tickUpper) });
-    out.push({
+    return {
       tokenId: id.toString(),
       token0: p.token0,
       token1: p.token1,
@@ -107,9 +144,11 @@ export async function readV3Positions(chain: V3Chain, owner: string, provider = 
       fees0,
       fees1,
       sqrtPriceX96: BigInt(slot0.sqrtPriceX96),
-    });
-  }
-  return out;
+    };
+  };
+  // a few reads in flight at once: one at a time took 90 s for 200 NFTs; all at once trips rate limits
+  const got = await mapLimited(ids, READ_CONCURRENCY, read);
+  return got.filter((p): p is V3Position => p !== null);
 }
 
 /** The side positions are valued in: WETH first (ETH), else a known stablecoin (USD). */

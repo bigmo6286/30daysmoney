@@ -54,7 +54,9 @@ export function chainFrom(opts: Record<string, string | true>, env: NodeJS.Proce
   }
   const base = CHAINS[key];
   if (!base) throw new Error(`--chain must be one of: ${Object.keys(CHAINS).join(", ")}, custom`);
-  return { ...base, rpcUrl: env[`RPC_URL_${key.toUpperCase()}`] || base.rpcUrl };
+  const alchemyKey = (env.ALCHEMY_KEY || "").trim();
+  const alchemy = alchemyKey && base.alchemy ? `https://${base.alchemy}.g.alchemy.com/v2/${alchemyKey}` : "";
+  return { ...base, rpcUrl: env[`RPC_URL_${key.toUpperCase()}`] || alchemy || base.rpcUrl };
 }
 
 const addr = (v: unknown, what: string) => {

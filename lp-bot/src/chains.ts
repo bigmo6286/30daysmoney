@@ -6,6 +6,8 @@ export interface ChainPreset {
   name: string;
   chainId: number;
   rpcUrl: string;
+  /** Alchemy network slug: with ALCHEMY_KEY set, the bot uses Alchemy instead of the public RPC */
+  alchemy?: string;
   explorer: string;
   nativeSymbol: string;
   contracts: {
@@ -15,6 +17,17 @@ export interface ChainPreset {
     quoterV2: string;
     weth: string;
   };
+  /** Uniswap v4 (native-ETH pools without hooks). Absent = v3 only on this chain. */
+  v4?: V4Contracts;
+}
+
+export interface V4Contracts {
+  poolManager: string;
+  positionManager: string;
+  stateView: string;
+  quoter: string;
+  universalRouter: string;
+  permit2: string;
 }
 
 export const CHAINS: Record<string, ChainPreset> = {
@@ -22,6 +35,7 @@ export const CHAINS: Record<string, ChainPreset> = {
     name: "Robinhood Chain",
     chainId: 4663,
     rpcUrl: "https://rpc.mainnet.chain.robinhood.com",
+    alchemy: "robinhood-mainnet",
     explorer: "https://robinhoodchain.blockscout.com",
     nativeSymbol: "ETH",
     contracts: {
@@ -31,11 +45,21 @@ export const CHAINS: Record<string, ChainPreset> = {
       quoterV2: "0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7",
       weth: "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
     },
+    // from Uniswap's sdk-core / universal-router-sdk address maps (chain 4663), checked on-chain
+    v4: {
+      poolManager: "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+      positionManager: "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+      stateView: "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b",
+      quoter: "0x8dc178efb8111bb0973dd9d722ebeff267c98f94",
+      universalRouter: "0x204faca1764b154221e35c0d20abb3c525710498",
+      permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    },
   },
   base: {
     name: "Base",
     chainId: 8453,
     rpcUrl: "https://mainnet.base.org",
+    alchemy: "base-mainnet",
     explorer: "https://basescan.org",
     nativeSymbol: "ETH",
     contracts: {
@@ -50,6 +74,7 @@ export const CHAINS: Record<string, ChainPreset> = {
     name: "Arbitrum One",
     chainId: 42161,
     rpcUrl: "https://arb1.arbitrum.io/rpc",
+    alchemy: "arb-mainnet",
     explorer: "https://arbiscan.io",
     nativeSymbol: "ETH",
     contracts: {
