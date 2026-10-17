@@ -1,0 +1,10 @@
+services:
+  lp-bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - lpbot-data:/app/data
+
+volumes:
+  lpbot-data:

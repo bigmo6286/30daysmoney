@@ -1,0 +1,22 @@
+name: lp-bot
+on:
+  push:
+    paths: ["lp-bot/**", ".github/workflows/lp-bot.yml"]
+  pull_request:
+    paths: ["lp-bot/**", ".github/workflows/lp-bot.yml"]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lp-bot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: lp-bot/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test:all

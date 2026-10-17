@@ -42,3 +42,12 @@ FlipZ3ro's repos are the reference. Each product here is our own rebuild that do
 
 ## Weekly checkpoints
 Week 1: first sale · Week 2: $500 · Week 3: $1,200 · Week 4: $2,000
+
+## Progress log
+
+### Day 1 (2026-10-17)
+- `lp-bot/` v0.1 built: Telegram flow (paste token → pool → amount → single-side/in-range → confirm), `/list` with PnL vs deposit and vs HODL, collect, close (1 tx + optional swap back to ETH), rebalance, monitor (range alerts, TP/SL, auto-rebalance), **paper mode**, Robinhood + Base + Arbitrum presets, Docker, CI.
+- 41 tests passing, including an integration suite against the real Uniswap v3 contracts on a local chain.
+- Bugs found and fixed while testing (both also affect the reference bot's approach on sub-second chains): stale cached reads after a transaction, nonce reuse on back-to-back sends.
+
+**Still needed (owner):** a Telegram bot token + a burner wallet with a little ETH on Robinhood Chain for the first mainnet run; a payment account (Gumroad / Stripe / USDC address) for sales.
