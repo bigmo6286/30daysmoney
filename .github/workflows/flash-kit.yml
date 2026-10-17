@@ -1,0 +1,28 @@
+name: flash-kit
+on:
+  push:
+    paths: ["flash-kit/**", ".github/workflows/flash-kit.yml"]
+  pull_request:
+    paths: ["flash-kit/**", ".github/workflows/flash-kit.yml"]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            flash-kit/package-lock.json
+            lp-bot/package-lock.json
+      - run: npm ci
+        working-directory: lp-bot
+      - run: npm ci
+        working-directory: flash-kit
+      - run: npm run typecheck
+        working-directory: flash-kit
+      - run: npm test
+        working-directory: flash-kit
+      - run: npm run test:integration
+        working-directory: flash-kit
