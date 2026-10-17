@@ -38,6 +38,8 @@ Runs on **Robinhood Chain** by default; **Base** and **Arbitrum** are built in, 
 | `/closeall` | close everything |
 | `/wallet` | address + balance |
 | `/settings` · `/set <key> <value>` | view / change settings live |
+| `/scan` · `/auto` | best pools by measured fee yield · autopilot status, `/auto on\|off`, `/auto block <token>` |
+| `/screen <token>` | Jev risk check on any token: copycat, rug signs, risk, plus the on-chain facts behind them |
 
 ### Settings
 

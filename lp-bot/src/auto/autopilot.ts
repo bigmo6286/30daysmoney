@@ -8,7 +8,7 @@ import { ethers } from "ethers";
 import type { LpService } from "../lp/service";
 import type { Scanner, Candidate } from "./scanner";
 import type { Settings } from "../config";
-import { tokenFacts } from "./facts";
+import { tokenFacts, type TokenFacts } from "./facts";
 import { screenVerdict, type Assessment, type Screener } from "./screen";
 import { readJson, writeJsonAtomic } from "../store";
 import { esc, eth, feeTier, pct, signedEth } from "../core/format";
@@ -36,6 +36,7 @@ export interface GateResult {
 
 export interface ScreenResult extends GateResult {
   assessment?: Assessment;
+  facts?: TokenFacts;
   /** the screener couldn't answer (API down etc.): not the token's fault, so no cooldown */
   error?: boolean;
 }
@@ -137,19 +138,44 @@ export class Autopilot {
   async screen(c: Candidate, set: Settings): Promise<ScreenResult> {
     if (!this.screener) return { ok: false, error: true, reason: "no screener configured" };
     let assessment: Assessment;
+    let facts: TokenFacts;
     try {
-      const facts = await tokenFacts(this.lp.chain, c.token, c.pool);
+      facts = await tokenFacts(this.lp.chain, c.token, c.pool);
       const others = [...new Set(this.scanner.ranked().filter((x) => x.token !== c.token).map((x) => x.symbol))];
       assessment = await this.screener.assess(facts, c, others);
     } catch (e) {
       return { ok: false, error: true, reason: `screen failed: ${shortErr(e)}` };
     }
-    const v = screenVerdict(assessment, {
+    return { ...this.verdict(assessment, set), assessment, facts };
+  }
+
+  verdict(a: Assessment, set: Settings): GateResult {
+    return screenVerdict(a, {
       maxCopycat: set.autoMaxCopycatPct / 100,
       maxRugSigns: set.autoMaxRugPct / 100,
       maxRisk: set.autoMaxRiskPct / 100,
     });
-    return { ...v, assessment };
+  }
+
+  /** The screener's last answer for a token, if still cached (no API call). */
+  cachedScreen(token: string, set: Settings): ScreenResult | undefined {
+    const a = this.screener?.peek?.(token);
+    return a && { ...this.verdict(a, set), assessment: a };
+  }
+
+  /** Screen any token on demand: the tracked pool if the scanner has one, else its deepest WETH pool. */
+  async screenToken(token: string): Promise<ScreenResult & { symbol: string }> {
+    const t = ethers.getAddress(token);
+    let c = this.scanner
+      .ranked()
+      .filter((x) => x.token === t)
+      .sort((a, b) => (b.depthWei > a.depthWei ? 1 : -1))[0];
+    if (!c) {
+      const [p] = await this.lp.findPools(t);
+      if (!p) return { ok: false, error: true, reason: "no WETH pool with liquidity", symbol: t };
+      c = { pool: p.address, token: t, symbol: p.token.symbol, fee: p.fee, depthWei: p.quoteReserve, priceE18: p.priceE18, aprPct: 0, aprEmaPct: 0, movePct: 0, swaps: 0, samples: 0, updatedAt: Date.now() };
+    }
+    return { ...(await this.screen(c, this.settings())), symbol: c.symbol };
   }
 
   private async maybeOpen() {

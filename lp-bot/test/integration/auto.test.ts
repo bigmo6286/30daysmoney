@@ -8,7 +8,8 @@ import { PositionBook } from "../../src/lp/positions";
 import { LpService } from "../../src/lp/service";
 import { Scanner } from "../../src/auto/scanner";
 import { Autopilot } from "../../src/auto/autopilot";
-import type { Assessment, Screener } from "../../src/auto/screen";
+import { CachedScreener, type Assessment, type Screener } from "../../src/auto/screen";
+import { Handlers } from "../../src/bot/handlers";
 import type { TokenFacts } from "../../src/auto/facts";
 
 /** stand-in for Jev: records the facts it was shown and returns a fixed assessment */
@@ -106,7 +107,7 @@ describe("scanner + autopilot", () => {
 
   it("does not open what the screener blocks, or anything without a screener", async () => {
     const screen = fakeScreener({ rugSigns: 0.95 });
-    const { lp, settings, scanner, auto } = setup("screen", screen.s);
+    const { lp, settings, scanner, auto } = setup("screen", new CachedScreener(screen.s));
     for (let i = 0; i < 3; i++) {
       await churn();
       await scanner.scan();
@@ -116,6 +117,22 @@ describe("scanner + autopilot", () => {
     expect(lp.book.open()).toHaveLength(0);
     expect(screen.seen.length).toBe(2); // both pools asked, both blocked
     for (const f of screen.seen) expect(auto.state.cooldowns[f.address]).toBeGreaterThan(Date.now());
+
+    // /scan shows the cached verdict; /screen answers from cache with the on-chain facts
+    const token = screen.seen[0]!.address;
+    expect(auto.cachedScreen(token, settings.value)).toMatchObject({ ok: false, reason: "rug signs 95%" });
+    const out: string[] = [];
+    const tg = { ownerId: "1", send: async (t: string) => (out.push(t), { message_id: out.length }), edit: async (_: number, t: string) => void out.push(t), answer: async () => {} };
+    const h = new Handlers(tg as any, lp, settings, auto);
+    await h.handle({ chatId: "1", fromId: "1", text: "/scan" });
+    expect(out.at(-1)).toContain("🧪🚫");
+    await h.handle({ chatId: "1", fromId: "1", text: `/screen ${token}` });
+    expect(out.at(-1)).toContain("rug signs 95%");
+    expect(out.at(-1)).toContain("autopilot would skip");
+    expect(out.at(-1)).toContain("admin functions");
+    expect(screen.seen.length).toBe(2); // cached: no new screener call
+    await h.handle({ chatId: "1", fromId: "1", text: "/screen 0x000000000000000000000000000000000000beef" });
+    expect(out.at(-1)).toContain("no WETH pool");
 
     // same pools, no screener: screening on → nothing opens and the owner is told once
     const bare = setup("screen-none");

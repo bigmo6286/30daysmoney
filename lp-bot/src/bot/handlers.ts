@@ -28,7 +28,8 @@ Paste a token address to open a position.
 /closeall: close every position
 
 /scan: best pools right now (measured fee yield)
-/auto: autopilot status · /auto on|off · /auto block &lt;token&gt;`;
+/auto: autopilot status · /auto on|off · /auto block &lt;token&gt;
+/screen &lt;token&gt;: Jev risk check (copycat, rug signs, risk)`;
 
 export class Handlers {
   private draft: Draft | null = null;
@@ -90,6 +91,8 @@ export class Handlers {
         return this.scan();
       case "/auto":
         return this.autoCmd(args);
+      case "/screen":
+        return this.screenCmd(args[0]);
       case "/closeall":
         return void (await this.tg.send(`Close <b>all ${this.lp.book.open().length}</b> positions?`, [[{ text: "✅ Close all", data: "ca" }, { text: "✖ Cancel", data: "x" }]]));
       default:
@@ -258,13 +261,40 @@ export class Handlers {
     }
     const lines = ready.map((c, i) => {
       const g = this.auto!.gate(c, set);
-      return `${i + 1}. <b>${esc(c.symbol)}</b> ${feeTier(c.fee)} · APR ${c.aprEmaPct.toFixed(0)}% · depth ${eth(c.depthWei, 2)} · ${c.swaps} swaps · move ${pct(c.movePct)}${g.ok ? " ✅" : ` <i>(${esc(g.reason ?? "")})</i>`}`;
+      const sc = this.auto!.cachedScreen(c.token, set);
+      const screen = !sc ? "" : sc.ok ? " 🧪✅" : ` 🧪🚫 <i>${esc(sc.reason ?? "")}</i>`;
+      return `${i + 1}. <b>${esc(c.symbol)}</b> ${feeTier(c.fee)} · APR ${c.aprEmaPct.toFixed(0)}% · depth ${eth(c.depthWei, 2)} · ${c.swaps} swaps · move ${pct(c.movePct)}${g.ok ? " ✅" : ` <i>(${esc(g.reason ?? "")})</i>`}${screen}`;
     });
     const kb: Keyboard = ready.slice(0, 4).map((c) => [{ text: `🎯 LP ${c.symbol} ${feeTier(c.fee)}`, data: `o:${c.pool}` }]);
     await this.tg.send(
-      `🔎 <b>Top pools</b> · fee APR measured for a ${set.autoSizeEth} ETH position at ±${set.widthPct}%\n\n${lines.join("\n")}\n\n✅ = passes the autopilot gates`,
+      `🔎 <b>Top pools</b> · fee APR measured for a ${set.autoSizeEth} ETH position at ±${set.widthPct}%\n\n${lines.join("\n")}\n\n✅ = passes the autopilot gates · 🧪 = Jev screen (cached)`,
       kb,
     );
+  }
+
+  private async screenCmd(arg?: string) {
+    if (!this.auto) return;
+    if (!arg || !ethers.isAddress(arg)) return void (await this.tg.send("usage: /screen &lt;token address&gt;"));
+    if (!this.auto.screener) return void (await this.tg.send("No screener: set <code>TYPESAFE_API_KEY</code> in .env and restart."));
+    const msg = await this.tg.send("🧪 Screening…");
+    const r = await this.auto.screenToken(arg);
+    if (!r.assessment) return void (await this.tg.edit(msg.message_id, `⚠️ ${esc(r.symbol)}: ${esc(r.reason ?? "screen failed")}`));
+    const a = r.assessment;
+    const f = r.facts;
+    const p = (x: number) => `${(x * 100).toFixed(0)}%`;
+    const lines = [
+      `🧪 <b>${esc(r.symbol)}</b> · ${esc(a.source)}`,
+      `copycat ${p(a.copycat)} · rug signs ${p(a.rugSigns)} · risk ${p(a.risk)}`,
+      r.ok ? "✅ passes the autopilot thresholds" : `🚫 autopilot would skip: ${esc(r.reason ?? "")}`,
+    ];
+    if (f) {
+      lines.push(
+        "",
+        `owner: ${f.owner === "renounced" || f.owner === "none" ? f.owner : `<code>${esc(f.owner)}</code>`}${f.upgradeableProxy ? " · upgradeable proxy" : ""} · ${f.supplyInPoolPct}% of supply in pool`,
+        `admin functions: ${f.adminFunctions.length ? esc(f.adminFunctions.map((s) => s.split("(")[0]).join(", ")) : "none found"}`,
+      );
+    }
+    await this.tg.edit(msg.message_id, lines.join("\n"));
   }
 
   private async autoCmd(args: string[]) {
