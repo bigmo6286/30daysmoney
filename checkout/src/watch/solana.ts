@@ -7,6 +7,8 @@ import { PublicKey } from "@solana/web3.js";
 import type { Transfer } from "../orders";
 import { rpc } from "./rpc";
 
+/** Solana has v0 and v1 transactions; asking for less makes the RPC refuse newer ones outright. */
+const MAX_TX_VERSION = 1;
 export const SOL_USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const TOKEN_PROGRAM = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 const ATA_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
@@ -73,13 +75,22 @@ export class SolanaWatcher {
     );
     if (!sigs.length) return [];
     const out: Transfer[] = [];
+    // oldest first; the cursor only moves past a signature once it has been read, so a failed
+    // read is retried next poll instead of skipped (a skipped signature would be a lost payment)
     for (const s of [...sigs].reverse()) {
-      if (s.err) continue;
-      const tx = await rpc<any>(this.rpcUrl, "getTransaction", [s.signature, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0, commitment: "confirmed" }], this.f);
-      const got = incoming(tx, this.account);
-      if (got) out.push({ chain: "solana", txid: s.signature, ...got, at: (tx?.blockTime ?? s.blockTime ?? Date.now() / 1000) * 1000 });
+      if (!s.err) {
+        let tx: any;
+        try {
+          tx = await rpc<any>(this.rpcUrl, "getTransaction", [s.signature, { encoding: "jsonParsed", maxSupportedTransactionVersion: MAX_TX_VERSION, commitment: "confirmed" }], this.f);
+        } catch (e) {
+          if (out.length || this.cursor !== undefined) return out;
+          throw e;
+        }
+        const got = incoming(tx, this.account);
+        if (got) out.push({ chain: "solana", txid: s.signature, ...got, at: (tx?.blockTime ?? s.blockTime ?? Date.now() / 1000) * 1000 });
+      }
+      this.cursor = s.signature;
     }
-    this.cursor = sigs[0]!.signature; // newest first
     return out;
   }
 }

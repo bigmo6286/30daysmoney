@@ -58,4 +58,4 @@ Week 1: first sale · Week 2: $500 · Week 3: $1,200 · Week 4: $2,000
 - `pnl-dashboard/`: rebuild of poolpnl. Bot books + any wallet's Uniswap v3 (EVM) and Meteora DLMM (Solana) positions, daily PnL calendar, CSV. Cross-checked against lp-bot on a local Uniswap v3 chain to 1e-9 ETH.
 - `flash-kit/`: rebuild of RobinArb / rh-flash-toolkit / morpho-toolkit. Morpho flash loan → two-pool Uniswap v3 arb with an on-chain profit-or-revert executor (fixes the drainable callback in rh-flash-toolkit). Proven end to end on a local chain. Not yet rebuilt: kamino-tools (Solana) and the RobinFun ↔ v4 route.
 
-**Still needed (owner):** a Telegram bot token + a burner wallet with a little ETH on Robinhood Chain for the first mainnet run; the USDC receiving addresses (Solana and/or Base) and a domain for `checkout/`; a Solana RPC (Helius free tier is fine) for the dlmm-agent paper run.
+**Still needed (owner):** a Telegram bot token + a burner wallet with a little ETH on Robinhood Chain for the first mainnet run; a domain for `checkout/` (USDC on Base goes to 0x51F0…67A7); a Solana RPC (Helius free tier is fine) for the dlmm-agent paper run.
