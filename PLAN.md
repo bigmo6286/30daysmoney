@@ -50,4 +50,7 @@ Week 1: first sale · Week 2: $500 · Week 3: $1,200 · Week 4: $2,000
 - 41 tests passing, including an integration suite against the real Uniswap v3 contracts on a local chain.
 - Bugs found and fixed while testing (both also affect the reference bot's approach on sub-second chains): stale cached reads after a transaction, nonce reuse on back-to-back sends.
 
-**Still needed (owner):** a Telegram bot token + a burner wallet with a little ETH on Robinhood Chain for the first mainnet run; a payment account (Gumroad / Stripe / USDC address) for sales.
+- `lp-bot/` autopilot gained token screening with Jev (TypeSafe): copycat / rug-signs / risk per token before any auto-open, `/screen <token>`, warnings on manual opens. Tuned against one live call (a copycat with mint/blacklist/tax functions scored 97/93/99%, a renounced token 8/4/6%).
+- `dlmm-agent/` v0.1 (rebuild of meridian-rs): Meteora DLMM on Solana from Telegram. Deterministic screening (no LLM in the loop), paper mode by default, simulate-before-send with priority fees and re-broadcast, stop loss on by default and never gated, mint red-flag gates (freeze authority, permanent delegate, transfer hooks/fees, live mint authority, top-10 share), Jupiter round-trip check, Jev screening, PnL from the chain. 27 tests. **Not yet run against mainnet**: this build environment can't reach Solana RPC, Meteora or Jupiter, so the first paper run on a VPS is the real test.
+
+**Still needed (owner):** a Telegram bot token + a burner wallet with a little ETH on Robinhood Chain for the first mainnet run; a payment account (Gumroad / Stripe / USDC address) for sales; a Solana RPC (Helius free tier is fine) for the dlmm-agent paper run.
