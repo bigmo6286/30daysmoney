@@ -28,6 +28,8 @@ export interface PositionRecord {
   /** fees already collected, valued in ETH at collection time */
   collectedQuote: string;
   openedAt: number;
+  /** opened by the autopilot (only these are auto-rotated) */
+  auto?: boolean;
   /** paper only: accrued fee estimate + last fee-growth snapshot */
   paperFee0?: string;
   paperFee1?: string;

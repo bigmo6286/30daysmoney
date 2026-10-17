@@ -62,7 +62,7 @@ export async function startEnv(port = 8546 + Math.floor(Math.random() * 1000)): 
   });
   const rpcUrl = `http://127.0.0.1:${port}`;
   await waitForRpc(rpcUrl);
-  const provider = new ethers.JsonRpcProvider(rpcUrl, 31337, { staticNetwork: true });
+  const provider = new ethers.JsonRpcProvider(rpcUrl, 31337, { staticNetwork: true, cacheTimeout: -1 });
   provider.pollingInterval = 50;
   const deployer = new ethers.NonceManager(new ethers.Wallet(DEPLOYER_KEY, provider));
   const trader = new ethers.NonceManager(new ethers.Wallet(TRADER_KEY, provider));

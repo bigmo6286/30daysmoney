@@ -48,8 +48,12 @@ export class Chain {
   async send(label: string, tx: ethers.TransactionRequest): Promise<ethers.TransactionReceipt> {
     if (!this.signer) throw new Error("no wallet configured (paper mode cannot send transactions)");
     const req = { ...tx, from: this.signer.address };
+    let gasLimit: bigint;
     try {
       await this.provider.call(req);
+      // +25%: if a trade lands first and our swap crosses more ticks, an exact estimate runs out of
+      // gas inside the token transfer and reverts (surfacing as a confusing "STF")
+      gasLimit = ((await this.provider.estimateGas(req)) * 125n) / 100n;
     } catch (e) {
       throw new Error(`${label}: simulation reverted, nothing sent (${shortErr(e)})`);
     }
@@ -58,7 +62,7 @@ export class Chain {
     const nonce = Math.max(chainNonce, this.nextNonce ?? 0);
     let sent: ethers.TransactionResponse;
     try {
-      sent = await this.signer.sendTransaction({ ...tx, nonce });
+      sent = await this.signer.sendTransaction({ ...tx, nonce, gasLimit });
     } catch (e) {
       this.nextNonce = null;
       throw e;

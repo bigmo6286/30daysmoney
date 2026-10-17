@@ -2,7 +2,8 @@
 import { ethers } from "ethers";
 import type { Telegram, Incoming, Keyboard } from "./telegram";
 import type { LpService, OpenPlan, PositionStatus, TxSummary } from "../lp/service";
-import type { PoolView } from "../chain/pools";
+import { readPoolView, type PoolView } from "../chain/pools";
+import type { Autopilot } from "../auto/autopilot";
 import type { SettingsStore } from "../config";
 import { age, esc, eth, feeTier, pct, price, signedEth } from "../core/format";
 import { shortErr } from "../chain/client";
@@ -24,7 +25,10 @@ Paste a token address to open a position.
 /wallet: balances
 /settings, /set &lt;key&gt; &lt;value&gt;
 /close &lt;id&gt; · /collect &lt;id&gt; · /rebalance &lt;id&gt;
-/closeall: close every position`;
+/closeall: close every position
+
+/scan: best pools right now (measured fee yield)
+/auto: autopilot status · /auto on|off · /auto block &lt;token&gt;`;
 
 export class Handlers {
   private draft: Draft | null = null;
@@ -33,6 +37,7 @@ export class Handlers {
     private readonly tg: Telegram,
     private readonly lp: LpService,
     private readonly settings: SettingsStore,
+    private readonly auto?: Autopilot,
   ) {}
 
   private get tag() {
@@ -81,6 +86,10 @@ export class Handlers {
         return args[0] ? this.collect(args[0]) : void (await this.tg.send("usage: /collect &lt;id&gt;"));
       case "/rebalance":
         return this.confirm("rebalance", args[0]);
+      case "/scan":
+        return this.scan();
+      case "/auto":
+        return this.autoCmd(args);
       case "/closeall":
         return void (await this.tg.send(`Close <b>all ${this.lp.book.open().length}</b> positions?`, [[{ text: "✅ Close all", data: "ca" }, { text: "✖ Cancel", data: "x" }]]));
       default:
@@ -164,6 +173,11 @@ export class Handlers {
       }
       case "ref":
         return this.list();
+      case "o": {
+        const pool = await readPoolView(this.lp.chain, arg!);
+        this.draft = { pools: [pool], pool, awaitingAmount: true };
+        return void (await this.tg.send(`<b>${esc(pool.token.symbol)}</b> · ${feeTier(pool.fee)} pool\nHow much ETH? (e.g. <code>0.05</code>)`));
+      }
       case "c":
       case "r":
         return this.confirm(kind === "c" ? "close" : "rebalance", arg);
@@ -230,6 +244,51 @@ export class Handlers {
     });
     kb.push([{ text: "🔄 Refresh", data: "ref" }]);
     await this.tg.send(`📋 <b>Positions</b>${this.tag}\n\n${blocks.join("\n\n")}\n\n<b>TOTAL</b> ${eth(total)} ETH · PnL ${signedEth(pnl)}`, kb);
+  }
+
+  private async scan() {
+    if (!this.auto) return;
+    const sc = this.auto.scanner;
+    if (!sc.lastScanAt) await this.tg.send("🔎 First scan: reading the last hour of swaps to find active pools…");
+    const rows = sc.lastScanAt ? sc.ranked() : await sc.scan();
+    const set = this.settings.value;
+    const ready = rows.filter((c) => c.samples >= 1).slice(0, 8);
+    if (!ready.length) {
+      return void (await this.tg.send(`Tracking ${sc.indexedCount} active WETH pools. Yield needs two readings: check /scan again in ~${set.autoScanMin} min.`));
+    }
+    const lines = ready.map((c, i) => {
+      const g = this.auto!.gate(c, set);
+      return `${i + 1}. <b>${esc(c.symbol)}</b> ${feeTier(c.fee)} · APR ${c.aprEmaPct.toFixed(0)}% · depth ${eth(c.depthWei, 2)} · ${c.swaps} swaps · move ${pct(c.movePct)}${g.ok ? " ✅" : ` <i>(${esc(g.reason ?? "")})</i>`}`;
+    });
+    const kb: Keyboard = ready.slice(0, 4).map((c) => [{ text: `🎯 LP ${c.symbol} ${feeTier(c.fee)}`, data: `o:${c.pool}` }]);
+    await this.tg.send(
+      `🔎 <b>Top pools</b> · fee APR measured for a ${set.autoSizeEth} ETH position at ±${set.widthPct}%\n\n${lines.join("\n")}\n\n✅ = passes the autopilot gates`,
+      kb,
+    );
+  }
+
+  private async autoCmd(args: string[]) {
+    if (!this.auto) return;
+    const [sub, arg] = args;
+    if (sub === "on" || sub === "off") this.settings.set("autoEnabled", sub);
+    if (sub === "block" && arg && ethers.isAddress(arg)) {
+      this.auto.block(arg);
+      return void (await this.tg.send(`🚫 ${esc(arg)} will never be auto-opened.`));
+    }
+    const s = this.settings.value;
+    const open = this.auto.autoPositions();
+    await this.tg.send(
+      [
+        `🤖 <b>Autopilot ${s.autoEnabled ? "ON" : "OFF"}</b>${this.tag}`,
+        `size ${s.autoSizeEth} ETH · max open ${s.autoMaxOpen} (now ${open.length}) · ${s.autoMode}`,
+        `budget ${eth(this.auto.spentToday())} / ${s.autoDailyEth} ETH today`,
+        `opens when: APR ≥ ${s.autoMinAprPct}% · depth ≥ ${s.autoMinDepthEth} ETH · move ≤ ${s.autoMaxMovePct}% · round-trip check`,
+        `closes when: out of range ${s.autoCloseOorMin}m · APR < ${s.autoExitAprPct}% after ${s.autoGraceMin}m${s.tpPct ? ` · TP ${s.tpPct}%` : ""}${s.slPct ? ` · SL ${s.slPct}%` : ""}`,
+        `scan every ${s.autoScanMin}m · ${this.auto.scanner.indexedCount} active pools tracked`,
+        "",
+        s.autoEnabled ? "Turn off: /auto off" : "Turn on: /auto on · tune with /set auto… (see /settings)",
+      ].join("\n"),
+    );
   }
 
   private async history() {

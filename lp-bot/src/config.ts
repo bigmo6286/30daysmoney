@@ -28,6 +28,30 @@ export const SettingsSchema = z.object({
   slPct: z.number().min(0).default(0),
   /** Swap the token side back to ETH on close. */
   swapToEthOnClose: z.boolean().default(true),
+
+  // ── autopilot: scan pools, open the best within caps, rotate out of faded ones ──
+  /** Master switch for auto-opening/closing. The scanner (/scan) runs regardless. */
+  autoEnabled: z.boolean().default(false),
+  autoScanMin: z.number().min(1).default(5),
+  autoSizeEth: z.number().positive().default(0.01),
+  autoMaxOpen: z.number().int().min(0).default(3),
+  /** Max ETH the autopilot may commit per UTC day. */
+  autoDailyEth: z.number().min(0).default(0.05),
+  autoMode: z.enum(["single", "inrange"]).default("inrange"),
+  /** Only open pools whose measured fee yield (APR, for a position of autoSizeEth) is at least this. */
+  autoMinAprPct: z.number().min(0).default(200),
+  /** Minimum WETH held by the pool. */
+  autoMinDepthEth: z.number().min(0).default(1),
+  /** Skip pools whose price moved more than this between two scans. */
+  autoMaxMovePct: z.number().min(0).default(10),
+  /** Close an auto position whose pool yield fell below this (after autoGraceMin). 0 = off. */
+  autoExitAprPct: z.number().min(0).default(50),
+  autoGraceMin: z.number().min(0).default(60),
+  /** Close an auto position that has been out of range this long. 0 = off. */
+  autoCloseOorMin: z.number().min(0).default(60),
+  /** Don't re-enter a token the autopilot just exited for this long. */
+  autoCooldownHours: z.number().min(0).default(12),
+  dailyReport: z.boolean().default(true),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 
@@ -118,6 +142,7 @@ export class SettingsStore {
     let v: unknown;
     if (typeof cur === "boolean") v = /^(1|on|true|yes)$/i.test(raw) ? true : /^(0|off|false|no)$/i.test(raw) ? false : raw;
     else if (Array.isArray(cur)) v = raw.split(",").map((s) => Number(s.trim()));
+    else if (typeof cur === "string") v = raw;
     else v = Number(raw);
     const next = SettingsSchema.parse({ ...this.value, [key]: v });
     this.value = next;
