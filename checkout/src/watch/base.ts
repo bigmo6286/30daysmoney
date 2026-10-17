@@ -5,7 +5,9 @@ import { rpc } from "./rpc";
 export const BASE_USDC = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 const TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 const CONFIRMATIONS = 3;
-const CHUNK = 2_000;
+/** public RPCs cap eth_getLogs ranges; start modest and shrink when the node refuses */
+const CHUNK_START = 500;
+const CHUNK_MIN = 50;
 
 interface Log {
   address: string;
@@ -32,6 +34,7 @@ export function parseLog(l: Log): { txid: string; amountMicro: number; from: str
 
 export class BaseWatcher {
   private next: number | undefined;
+  private chunk = CHUNK_START;
   constructor(
     private readonly rpcUrl: string,
     private readonly receiver: string,
@@ -49,16 +52,25 @@ export class BaseWatcher {
   async poll(): Promise<Transfer[]> {
     const head = parseInt(await rpc<string>(this.rpcUrl, "eth_blockNumber", [], this.f), 16) - CONFIRMATIONS;
     let from = this.next ?? head - 300; // first run: look back ~10 minutes
+    const start = from;
     const out: Transfer[] = [];
     const times = new Map<number, number>();
     while (from <= head) {
-      const to = Math.min(head, from + CHUNK - 1);
-      const logs = await rpc<Log[]>(
-        this.rpcUrl,
-        "eth_getLogs",
-        [{ address: BASE_USDC, topics: [TRANSFER, null, topicAddr(this.receiver)], fromBlock: "0x" + from.toString(16), toBlock: "0x" + to.toString(16) }],
-        this.f,
-      );
+      const to = Math.min(head, from + this.chunk - 1);
+      let logs: Log[];
+      try {
+        logs = await rpc<Log[]>(
+          this.rpcUrl,
+          "eth_getLogs",
+          [{ address: BASE_USDC, topics: [TRANSFER, null, topicAddr(this.receiver)], fromBlock: "0x" + from.toString(16), toBlock: "0x" + to.toString(16) }],
+          this.f,
+        );
+      } catch (e) {
+        // keep what we have: the cursor stays at the first block not yet read, so nothing is skipped
+        if (this.chunk > CHUNK_MIN) this.chunk = Math.max(CHUNK_MIN, Math.floor(this.chunk / 2));
+        if (from !== start) break; // some chunks done: return them; the rest next poll
+        throw e;
+      }
       for (const l of logs) {
         const p = parseLog(l);
         if (!p) continue;
@@ -69,8 +81,8 @@ export class BaseWatcher {
         out.push({ chain: "base", txid: p.txid, amountMicro: p.amountMicro, from: p.from, at: times.get(p.block)! });
       }
       from = to + 1;
+      this.next = from; // progress is saved per chunk
     }
-    this.next = from;
     return out;
   }
 }

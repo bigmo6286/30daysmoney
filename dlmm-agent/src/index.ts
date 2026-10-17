@@ -19,7 +19,8 @@ async function main() {
   // paper mode never signs, even when a key is present
   const sol = new Solana(cfg.rpcUrl, cfg.mode === "live" ? payer : null, cfg.paperAddress || payer?.publicKey.toBase58());
   await sol.connection.getLatestBlockhash().catch((e) => {
-    throw new Error(`RPC ${cfg.rpcUrl} unreachable: ${e instanceof Error ? e.message : e}`);
+    // host only: RPC URLs often carry an API key in the path or query
+    throw new Error(`RPC ${new URL(cfg.rpcUrl).host} unreachable: ${e instanceof Error ? e.message : e}`);
   });
   const settings = new SettingsStore(cfg.dataDir);
   const jup = new Jupiter(cfg.jupiterKey);

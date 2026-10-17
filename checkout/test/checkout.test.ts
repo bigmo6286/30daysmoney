@@ -117,6 +117,37 @@ describe("solana watcher", () => {
   });
 });
 
+describe("solana watcher failures", () => {
+  it("asks for v1 transactions, and a failed read keeps the cursor before it (retried, never skipped)", async () => {
+    let fail = true;
+    const seen: any[] = [];
+    const f = (async (_u: string, init: RequestInit) => {
+      const b = JSON.parse(String(init.body));
+      seen.push(b);
+      if (b.method === "getSignaturesForAddress") return new Response(JSON.stringify({ result: [{ signature: "S3", err: null }, { signature: "S2", err: null }, { signature: "S1", err: null }] }));
+      if (b.params[0] === "S2" && fail) return new Response(JSON.stringify({ error: { code: -32000, message: "node hiccup" } }));
+      return new Response(JSON.stringify({ result: solTx("7") }));
+    }) as unknown as typeof fetch;
+    const w = new SolanaWatcher("http://rpc", OWNER, { cursor: "S0" }, f);
+    const first = await w.poll();
+    expect(first.map((t) => t.txid)).toEqual(["S1"]);
+    expect(w.state.cursor).toBe("S1"); // S2 failed: not passed
+    expect(seen.find((b) => b.method === "getTransaction").params[1].maxSupportedTransactionVersion).toBe(1);
+    fail = false;
+    const second = await w.poll();
+    // this mock ignores `until`, so S1 comes back too; the order book drops repeated txids
+    expect(second.map((t) => t.txid)).toEqual(["S1", "S2", "S3"]);
+    expect(w.state.cursor).toBe("S3");
+  });
+  it("treats in-body rate-limit errors as retryable", async () => {
+    let n = 0;
+    const f = (async () => (++n < 3 ? new Response(JSON.stringify({ error: { code: -32011, message: "request limit reached" } })) : new Response(JSON.stringify({ result: "0x10" })))) as unknown as typeof fetch;
+    const { rpc } = await import("../src/watch/rpc");
+    expect(await rpc<string>("http://x", "eth_blockNumber", [], f, 3, 1)).toBe("0x10");
+    expect(n).toBe(3);
+  });
+});
+
 describe("base watcher", () => {
   const RECV = "0x1111111111111111111111111111111111111111";
   const log = (amount: number, over: Record<string, unknown> = {}) => ({
