@@ -171,7 +171,7 @@ export class Handlers {
     if (f) {
       lines.push(
         `mint authority ${f.mintAuthority ? "⚠️ live" : "revoked"} · freeze ${f.freezeAuthority ? "⚠️ live" : "revoked"} · ${f.program}${f.extensions.length ? ` (${esc(f.extensions.join(", "))})` : ""}`,
-        `top 10 holders ${f.top10Pct.toFixed(1)}% · in pool ${f.inPoolPct.toFixed(1)}%`,
+        `top 10 holders ${f.top10Pct === null ? "unknown (RPC)" : f.top10Pct.toFixed(1) + "%"} · in pool ${f.inPoolPct === null ? "unknown" : f.inPoolPct.toFixed(1) + "%"}`,
       );
     }
     if (g.roundTripLossPct !== undefined) lines.push(`round trip −${g.roundTripLossPct.toFixed(1)}%`);

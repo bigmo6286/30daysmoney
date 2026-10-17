@@ -43,6 +43,7 @@ export class TokenGates implements Gates {
     }
     if (facts.redFlags.length) return { ok: false, reason: facts.redFlags[0], facts };
     if (s.requireMintRenounced && facts.mintAuthority) return { ok: false, reason: "mint authority still live", facts };
+    if (facts.top10Pct === null) return { ok: false, error: true, reason: "holder concentration unavailable (RPC); retry later", facts };
     if (facts.top10Pct > s.maxTop10Pct) return { ok: false, reason: `top 10 holders own ${facts.top10Pct.toFixed(0)}%`, facts };
 
     let loss: number | null;

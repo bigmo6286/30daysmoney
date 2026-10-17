@@ -45,6 +45,23 @@ describe("mint facts", () => {
   });
 });
 
+describe("holder lookup failure", () => {
+  it("reports unknown (null), never 0%, when the largest-accounts call fails", async () => {
+    const conn = { ...fakeConn({}), getTokenLargestAccounts: async () => { throw new Error("429 Too Many Requests"); } };
+    const f = await mintFacts(conn as any, MINT, POOL);
+    expect(f.top10Pct).toBeNull();
+    expect(f.inPoolPct).toBeNull();
+  });
+  it("the gate treats unknown concentration as 'retry later', not as a pass", async () => {
+    const { TokenGates } = await import("../src/auto/gates");
+    const { SettingsSchema } = await import("../src/config");
+    const conn = { ...fakeConn({}, [], "spl-token"), getTokenLargestAccounts: async () => { throw new Error("429"); } };
+    const jup = { roundTripLossPct: async () => { throw new Error("must not be reached"); } };
+    const g = await new TokenGates(conn as any, jup as any).check(parsePool(rawPool())!, 0.1, SettingsSchema.parse({ requireMintRenounced: false }), []);
+    expect(g).toMatchObject({ ok: false, error: true, reason: expect.stringContaining("unavailable") });
+  });
+});
+
 describe("jev", () => {
   const pool = parsePool(rawPool())!;
   const facts = { mint: pool.mint, program: "spl-token", decimals: 6, supply: "1", mintAuthority: null, freezeAuthority: null, extensions: [], transferFeeBps: 0, top10Pct: 12, inPoolPct: 30, redFlags: [] } as any;

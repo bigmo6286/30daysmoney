@@ -15,10 +15,10 @@ export interface MintFacts {
   /** Token-2022 extension names present on the mint */
   extensions: string[];
   transferFeeBps: number;
-  /** share of supply held by the 10 largest accounts, excluding the pool being considered, % */
-  top10Pct: number;
-  /** share of supply in the pool's own reserve, % */
-  inPoolPct: number;
+  /** share of supply held by the 10 largest accounts, excluding the pool being considered, %; null = couldn't read */
+  top10Pct: number | null;
+  /** share of supply in the pool's own reserve, %; null = couldn't read */
+  inPoolPct: number | null;
   redFlags: string[];
 }
 
@@ -35,8 +35,8 @@ export async function mintFacts(conn: Connection, mint: string, pool: string): P
   const transferFeeBps = Number(fee?.newerTransferFee?.transferFeeBasisPoints ?? fee?.olderTransferFee?.transferFeeBasisPoints ?? 0);
   const supply = BigInt(p.supply ?? "0");
 
-  let top10 = 0n;
-  let inPool = 0n;
+  let top10: bigint | null = null;
+  let inPool: bigint | null = null;
   try {
     const largest = (await conn.getTokenLargestAccounts(key, "confirmed")).value;
     const accs = await conn.getMultipleParsedAccounts(largest.map((a) => a.address), { commitment: "confirmed" });
@@ -47,9 +47,10 @@ export async function mintFacts(conn: Connection, mint: string, pool: string): P
       .slice(0, 10)
       .reduce((a, h) => a + h.amount, 0n);
   } catch {
-    // some RPCs rate-limit getTokenLargestAccounts; leave as 0 rather than block on it
+    // public RPCs often rate-limit getTokenLargestAccounts. Unknown stays unknown (null):
+    // the gate must not read a failed lookup as "nobody holds much".
   }
-  const pctOf = (x: bigint) => (supply > 0n ? Number((x * 10_000n) / supply) / 100 : 0);
+  const pctOf = (x: bigint | null) => (x === null ? null : supply > 0n ? Number((x * 10_000n) / supply) / 100 : 0);
 
   const redFlags: string[] = [];
   if (p.freezeAuthority) redFlags.push("freeze authority set (holders can be frozen)");
