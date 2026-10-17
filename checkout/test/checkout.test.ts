@@ -232,7 +232,7 @@ describe("http api", () => {
       book.setLicense(o.id, "LIC");
       const paid = await (await fetch(`${base}/api/orders/${o.id}`)).json();
       expect(paid).toMatchObject({ status: "paid", license: "LIC", contact: "@seller" });
-      expect(paid.deliver).toContain("GitHub");
+      expect(paid.deliver).toContain("github.com/bigmo6286/30daysmoney");
 
       expect((await post(base, { product: "lp-bot", chain: "base", contact: "@x" })).status).toBe(400); // base not enabled
       expect((await post(base, { product: "nope", chain: "solana", contact: "@x" })).status).toBe(404);

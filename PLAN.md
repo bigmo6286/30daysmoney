@@ -66,4 +66,13 @@ Week 1: first sale · Week 2: $500 · Week 3: $1,200 · Week 4: $2,000
   - `flash-kit`: mainnet-fork suite against the **real Morpho Blue + Uniswap v3** (it was only tested against a mock before): exact simulated profit paid, Morpho left whole, CLI end to end. Live: Morpho can lend 26.7 WETH on Robinhood Chain, 82k on Base.
 - One RPC key for everything: `ALCHEMY_KEY` is now read by lp-bot, dlmm-agent, flash-kit and pnl-dashboard (EVM), as it already was by checkout.
 
-**Still needed (owner):** a burner wallet with a little ETH on Robinhood Chain for the first live (non-paper) run; a domain + host for `checkout/` (USDC on Base goes to 0x51F0…67A7). A Telegram bot (@thirtydaysmoney_bot) and the RPC are in place.
+- **Pro licenses:** lp-bot and dlmm-agent check checkout's signed key offline. Free tier: manual LP, paper mode, alerts, stop loss. Pro: autopilot, auto-rebalance (lp-bot), daily reports.
+- **lp-bot on Uniswap v4** (Robinhood Chain): native-ETH, hookless pools through the real PositionManager / UniversalRouter / Permit2, proven on a mainnet fork. Live finding: some hookless pools can't be quoted at all, so discovery skips them.
+- **Serverless shop:**
+  - a store page on GitHub Pages;
+  - a Telegram shop bot as the checkout;
+  - a scheduled GitHub Action every 5 min: watch payments, issue keys, DM them;
+  - state encrypted in the Actions cache.
+  - No server or domain to pay for. Checked end to end against a fake Telegram and live Base.
+
+**Still needed (owner):** a burner wallet with a little ETH on Robinhood Chain for the first live (non-paper) run; a second Telegram bot for the shop, and the GitHub secrets/variables in checkout/README.md#serverless-shop (USDC on Base goes to 0x51F0…67A7). A Telegram bot (@thirtydaysmoney_bot) and the RPC are in place.

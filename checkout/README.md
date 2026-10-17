@@ -16,7 +16,40 @@ Sell the bots for USDC on **Solana** or **Base**, straight into your own wallet.
 
 Paid after the order expired? Still matched, flagged `late`. Wrong amount? Logged as unmatched for you to sort out by hand.
 
-## Setup
+## Serverless shop (free: GitHub Pages + Telegram + GitHub Actions)
+
+No server and no domain. The store page is on GitHub Pages; "Buy" opens a Telegram shop bot; a scheduled GitHub Action runs every 5 minutes, answers the bot, watches the chain and DMs the license key when the payment lands.
+
+```
+store page (Pages) ──▶ t.me/<shop bot>?start=buy_lp-bot ──▶ bot: pick chain → exact amount + address
+                                                                   │
+buyer's wallet ── USDC ──▶ your wallet          every 5 min: .github/workflows/shop.yml (npm run tick)
+                                                  reads Telegram + USDC transfers → match → key in the chat
+```
+
+One-time setup (all in GitHub, a few minutes):
+
+1. **A second Telegram bot for the shop** (@BotFather → `/newbot`). Don't reuse the lp-bot's token: two programs can't both read one bot's messages.
+2. **Settings → Secrets and variables → Actions → Secrets:**
+   - `SHOP_TG_TOKEN`: the shop bot's token.
+   - `LICENSE_PRIVATE_KEY`: the signing key whose public half is built into the bots. Keep a copy offline; losing it means re-issuing keys.
+   - `ALCHEMY_KEY`.
+   - `TG_OWNER_ID`: your numeric Telegram id, for sale pings. Message the shop bot once so it can write to you.
+3. **Variables:**
+   - `BASE_RECEIVER` and/or `SOL_RECEIVER`.
+   - `CONTACT` (your @handle).
+   - `SHOP_BOT` (the shop bot's username, without @).
+   - `SHOP_ENABLED` = `true`.
+4. **Settings → Pages → Source: GitHub Actions**, then run the `pages` workflow once (Actions tab). The store is at `https://<owner>.github.io/<repo>/`.
+
+Notes:
+- **How long a key takes:** GitHub runs schedules every 5 minutes at best, and later under load. Buyers are told their key arrives within ~15 minutes.
+- **Where the state lives:** orders, buyer chat ids, keys and chain cursors are carried between runs in the Actions cache as one AES-256-GCM file. Its key is derived from `LICENSE_PRIVATE_KEY`, so workflows from forks, which can read caches but never get secrets, see only noise. A failed decrypt never overwrites the saved state.
+- **If the cache is lost** (unused for 7 days): open orders are gone, but a payment that can't be matched pings you with its tx, so you can issue the key by hand.
+- **GitHub pauses schedules after 60 days without commits.** Push something, or re-enable the workflow.
+- **Public repos run Actions free.** On a private repo the schedule uses about 9k minutes a month.
+
+## Setup (own server)
 
 ```bash
 cp .env.example .env

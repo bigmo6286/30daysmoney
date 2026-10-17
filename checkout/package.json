@@ -13,7 +13,10 @@
     "keygen": "node --import tsx src/keygen.ts",
     "ledger": "node --env-file-if-exists=.env --import tsx src/ledger.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "tick": "node --env-file-if-exists=.env --import tsx src/tick.ts",
+    "site": "node --env-file-if-exists=.env --import tsx src/site.ts",
+    "state": "node --import tsx src/statebox.ts"
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.4",

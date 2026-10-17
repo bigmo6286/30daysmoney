@@ -1,0 +1,100 @@
+import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { OrderBook } from "../src/orders";
+import { DEFAULT_PRODUCTS } from "../src/config";
+import { chatOf, Shop, tgContact, type Update } from "../src/shop";
+import { open, packDir, seal, stateKey, unpackDir } from "../src/statebox";
+import { renderStore } from "../src/site";
+import { generateKeys, issue } from "../src/license";
+
+const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "shop-"));
+const SOL = "4Re3Gxt3bJNQmptr9YyFS3CTeHKoSS4S58NvyjhU4XsH";
+const BASE = "0x51F0373A68B2Fa2aa61b41AeF13d5B74Aa1967A7";
+const shop = (book = new OrderBook(tmp())) => ({ book, s: new Shop({ book, products: DEFAULT_PRODUCTS, receivers: { solana: SOL, base: BASE }, contact: "@seller", checkEveryMin: 5 }) });
+let n = 0;
+const msg = (text: string, chat = 42, type = "private"): Update => ({ update_id: ++n, message: { chat: { id: chat, type }, from: { id: chat, username: "buyer" }, text } });
+const tap = (data: string, chat = 42): Update => ({ update_id: ++n, callback_query: { id: `q${n}`, from: { id: chat, username: "buyer" }, message: { chat: { id: chat } }, data } });
+
+describe("telegram shop", () => {
+  it("deep link from the store page → chain choice → an order with a unique exact amount", () => {
+    const { s, book } = shop();
+    const r1 = s.handle(msg("/start buy_lp-bot")).replies[0]!;
+    expect(r1.text).toContain("LP Bot Pro");
+    expect(r1.buttons![0]!.map((b) => b.data)).toEqual(["c:lp-bot:solana", "c:lp-bot:base"]);
+    const out = s.handle(tap("c:lp-bot:base"));
+    expect(out.answerCallback).toBeDefined();
+    const o = book.all()[0]!;
+    expect(o).toMatchObject({ product: "lp-bot", chain: "base", contact: "tg:42 @buyer", status: "pending" });
+    expect(o.amountMicro).toBeGreaterThan(49_000_000);
+    expect(out.replies[0]!.text).toContain((o.amountMicro / 1e6).toFixed(6));
+    expect(out.replies[0]!.text).toContain(BASE);
+    expect(out.replies[0]!.buttons).toBeUndefined(); // Telegram refuses non-http(s) button links
+    expect(chatOf(o)).toBe(42);
+  });
+
+  it("anything else shows the menu; group chats are ignored (keys are private)", () => {
+    const { s } = shop();
+    expect(s.handle(msg("hello")).replies[0]!.buttons!.length).toBe(DEFAULT_PRODUCTS.length);
+    expect(s.handle(msg("/start buy_nope")).replies[0]!.text).toContain("Pick a product");
+    expect(s.handle(msg("/start", -100, "group")).replies).toEqual([]);
+    expect(s.handle(tap("c:lp-bot:dogecoin")).replies[0]!.text).toContain("Pick a product");
+  });
+
+  it("delivers the license to the buyer's chat once paid, and /status re-sends it", () => {
+    const { s, book } = shop();
+    s.handle(tap("c:dlmm-agent:solana", 7));
+    const o = book.all()[0]!;
+    expect(s.delivery(o)).toBeNull(); // not paid yet
+    const paid = book.match({ chain: "solana", txid: "sig1", amountMicro: o.amountMicro, from: "x", at: Date.now() })!;
+    const k = generateKeys();
+    book.setLicense(paid.id, issue({ order: paid.id, product: paid.product, contact: paid.contact, issued: 1 }, k.privateKey));
+    const d = s.delivery(book.get(paid.id)!)!;
+    expect(d.chatId).toBe(7);
+    expect(d.text).toContain(book.get(paid.id)!.license!);
+    expect(d.text).toContain("LICENSE_KEY");
+    const st = s.handle(msg("/status", 7)).replies;
+    expect(st[0]!.text).toContain("paid");
+    expect(st[1]!.text).toContain(book.get(paid.id)!.license!);
+    expect(s.handle(msg("/status", 8)).replies[0]!.text).toContain("No orders"); // other people see nothing
+  });
+
+  it("contact format round-trips", () => {
+    expect(tgContact(-5)).toBe("tg:-5");
+    expect(chatOf({ contact: "tg:123 @x" } as never)).toBe(123);
+    expect(chatOf({ contact: "@x" } as never)).toBeNull();
+  });
+});
+
+describe("state box", () => {
+  it("packs a data dir, unreadable without the key, tamper-evident", () => {
+    const dir = tmp();
+    fs.writeFileSync(path.join(dir, "orders.json"), '{"orders":[{"contact":"tg:1"}]}');
+    fs.writeFileSync(path.join(dir, "sales.csv"), "a,b\n");
+    const key = stateKey("secret-license-key");
+    const blob = seal(packDir(dir), key);
+    expect(blob.toString("latin1")).not.toContain("tg:1");
+    const back = tmp();
+    unpackDir(open(blob, key), back);
+    expect(fs.readFileSync(path.join(back, "orders.json"), "utf8")).toContain("tg:1");
+    expect(() => open(blob, stateKey("other"))).toThrow();
+    const bad = Buffer.from(blob);
+    bad[bad.length - 1]! ^= 1;
+    expect(() => open(bad, key)).toThrow();
+    expect(() => unpackDir({ "../x": "no" }, back)).toThrow(/bad file name/);
+  });
+});
+
+describe("store page", () => {
+  it("links every product to the shop bot and never ships delivery text", () => {
+    const tpl = fs.readFileSync(new URL("../public/store.html", import.meta.url), "utf8");
+    const html = renderStore(tpl, { products: DEFAULT_PRODUCTS, shopBot: "my_shop_bot", repoUrl: "https://github.com/x/y", checkEveryMin: 15 });
+    expect(html).not.toMatch(/\{\{[A-Z_]+\}\}/);
+    expect(html).toContain('const bot = "my_shop_bot"');
+    expect(html).not.toContain(DEFAULT_PRODUCTS[0]!.deliver);
+    expect(() => renderStore(tpl, { products: [], shopBot: "@bad name", repoUrl: "", checkEveryMin: 5 })).toThrow(/SHOP_BOT/);
+    const evil = renderStore(tpl, { products: [{ id: "x", name: "</script><script>alert(1)</script>", priceUsd: 1, blurb: "" }], shopBot: "my_shop_bot", repoUrl: "", checkEveryMin: 5 });
+    expect(evil).not.toContain("</script><script>alert(1)");
+  });
+});
