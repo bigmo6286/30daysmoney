@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LP PnL</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f4f2; --surface-1: #fcfcfb; --line: #e2e1dd;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #6f6e69;
+  --pos: #2a78d6; --neg: #e34948; --mid: #f0efec; --good: #0ca30c; --critical: #d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #121211; --surface-1: #1a1a19; --line: #2e2e2b;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #9a998f;
+    --pos: #3987e5; --neg: #e66767; --mid: #383835;
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--text-primary); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; font-variant-numeric: tabular-nums; }
+main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 48px; }
+header { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
+h1 { font-size: 22px; margin: 0; }
+h2 { font-size: 15px; margin: 28px 0 10px; color: var(--text-secondary); font-weight: 600; }
+.meta { color: var(--text-muted); font-size: 13px; }
+.actions { display: flex; gap: 8px; }
+button, a.btn { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-1); color: var(--text-primary); cursor: pointer; text-decoration: none; }
+.warn { border: 1px solid var(--critical); border-radius: 8px; padding: 8px 12px; color: var(--text-primary); background: var(--surface-1); margin-bottom: 12px; font-size: 13px; }
+.warn b { color: var(--critical); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+.tile { background: var(--surface-1); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.tile .k { font-size: 12px; color: var(--text-muted); }
+.tile .v { font-size: 22px; font-weight: 600; }
+.tile .s { font-size: 12px; color: var(--text-secondary); }
+.unit { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+.tablewrap { overflow-x: auto; background: var(--surface-1); border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--text-muted); font-weight: 500; }
+td.num, th.num { text-align: right; }
+tr:last-child td { border-bottom: 0; }
+.tag { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--text-secondary); }
+.state { display: inline-flex; gap: 4px; align-items: center; }
+.state i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.cal { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 14px); gap: 3px; padding: 12px; background: var(--surface-1); border: 1px solid var(--line); border-radius: 10px; width: max-content; max-width: 100%; overflow-x: auto; position: relative; }
+.cal span { width: 14px; height: 14px; border-radius: 3px; background: var(--mid); }
+.legend { display: flex; gap: 10px; align-items: center; font-size: 12px; color: var(--text-secondary); margin-top: 6px; flex-wrap: wrap; }
+.legend span { display: inline-flex; gap: 4px; align-items: center; }
+.legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+#tip { position: fixed; pointer-events: none; background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.12); z-index: 5; }
+.muted { color: var(--text-muted); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div><h1>LP PnL</h1><div class="meta" id="meta">loading…</div></div>
+    <div class="actions"><button id="refresh">Refresh</button><a class="btn" href="/api/export.csv">Export CSV</a></div>
+  </header>
+  <div id="warnings"></div>
+  <div id="units"></div>
+
+  <h2>Daily realized PnL</h2>
+  <div id="calendars"></div>
+
+  <h2>Open positions</h2>
+  <div class="tablewrap"><table id="open"></table></div>
+
+  <h2>Closed positions</h2>
+  <div class="tablewrap"><table id="closed"></table></div>
+
+  <h2>Daily table</h2>
+  <div class="tablewrap"><table id="daily"></table></div>
+</main>
+<div id="tip" hidden></div>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const num = (v, dp = 4) => (v === undefined || v === null || Number.isNaN(v) ? "–" : (+v).toFixed(dp).replace(/\.?0+$/, "") || "0");
+  const signed = (v, dp = 4) => (v === undefined || v === null ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "") + num(Math.abs(v), dp));
+  const pct = (v) => (v === undefined || v === null ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(1) + "%");
+  const date = (t) => (t ? new Date(t).toISOString().slice(0, 16).replace("T", " ") : "–");
+  const held = (ms) => { const m = Math.max(0, Math.round(ms / 60000)); return m < 120 ? m + "m" : m < 2880 ? Math.round(m / 60) + "h" : Math.round(m / 1440) + "d"; };
+  const short = (s) => (s && s.length > 14 ? s.slice(0, 6) + "…" + s.slice(-4) : s || "");
+
+  const tip = $("tip");
+  const showTip = (e, html) => { tip.innerHTML = html; tip.hidden = false; tip.style.left = Math.min(e.clientX + 12, innerWidth - 200) + "px"; tip.style.top = (e.clientY + 12) + "px"; };
+  const hideTip = () => (tip.hidden = true);
+
+  function tiles(s) {
+    const out = [];
+    for (const unit of ["ETH", "SOL"]) {
+      const t = s.totals[unit];
+      const used = s.rows.some((r) => r.unit === unit);
+      if (!used) continue;
+      const wr = t.closed ? Math.round((t.wins / t.closed) * 100) + "% of " + t.closed : "no closes yet";
+      const open = s.rows.filter((r) => r.unit === unit && r.status === "open");
+      const valued = open.filter((r) => r.valueNative !== undefined);
+      const based = valued.filter((r) => r.depositNative !== undefined);
+      const unknown = open.length - valued.length;
+      const v = (x, n, fmt) => (n ? `${fmt(x)} <span class="unit">${unit}</span>` : "–");
+      out.push(`<h2>${unit}</h2><div class="tiles">
+        <div class="tile"><div class="k">Open value</div><div class="v">${v(t.openValue, valued.length, num)}</div><div class="s">${open.length} open${unknown ? ` · ${unknown} not valued (paper or unreadable)` : ""}</div></div>
+        <div class="tile"><div class="k">Unclaimed fees</div><div class="v">${v(t.unclaimedFees, valued.length, num)}</div></div>
+        <div class="tile"><div class="k">Unrealized (bot positions)</div><div class="v">${v(t.unrealized, based.length, signed)}</div><div class="s">value − deposit${based.length ? ` · ${based.length} position${based.length > 1 ? "s" : ""}` : ""}</div></div>
+        <div class="tile"><div class="k">Realized</div><div class="v">${signed(t.realized)} <span class="unit">${unit}</span></div><div class="s">win rate ${wr}</div></div>
+      </div>`);
+    }
+    $("units").innerHTML = out.join("") || '<p class="muted">No positions yet. Point LPBOT_DATA / DLMM_DATA at the bots\' data folders or add wallets.</p>';
+  }
+
+  function calendars(s) {
+    const box = $("calendars");
+    box.innerHTML = "";
+    for (const unit of ["ETH", "SOL"]) {
+      const days = s.daily.filter((d) => d.unit === unit);
+      if (!days.length) continue;
+      const by = new Map(days.map((d) => [d.day, d]));
+      const max = Math.max(...days.map((d) => Math.abs(d.pnl))) || 1;
+      const end = new Date(); end.setUTCHours(0, 0, 0, 0);
+      const start = new Date(end); start.setUTCDate(start.getUTCDate() - 7 * 12 + 1 - start.getUTCDay());
+      const cal = document.createElement("div");
+      cal.className = "cal";
+      cal.setAttribute("role", "img");
+      cal.setAttribute("aria-label", `${unit} daily realized PnL, last 12 weeks; see the daily table for values`);
+      for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+        const key = d.toISOString().slice(0, 10);
+        const v = by.get(key);
+        const cell = document.createElement("span");
+        if (v && v.pnl !== 0) {
+          const k = 25 + Math.round((Math.abs(v.pnl) / max) * 75);
+          cell.style.background = `color-mix(in oklab, var(${v.pnl > 0 ? "--pos" : "--neg"}) ${k}%, var(--mid))`;
+        }
+        const label = v ? `${key}<br><b>${signed(v.pnl)} ${unit}</b> · ${v.count} close${v.count > 1 ? "s" : ""}` : `${key}<br><span class="muted">no closes</span>`;
+        cell.onmousemove = (e) => showTip(e, label);
+        cell.onmouseleave = hideTip;
+        cal.append(cell);
+      }
+      const wrap = document.createElement("div");
+      wrap.innerHTML = `<div class="meta">${unit}</div>`;
+      wrap.append(cal);
+      const lg = document.createElement("div");
+      lg.className = "legend";
+      lg.innerHTML = `<span><i style="background:var(--neg)"></i>loss</span><span><i style="background:var(--mid)"></i>none / flat</span><span><i style="background:var(--pos)"></i>profit</span><span class="muted">darker = bigger (max ${num(max)} ${unit})</span>`;
+      wrap.append(lg);
+      wrap.style.marginBottom = "14px";
+      box.append(wrap);
+    }
+    if (!box.children.length) box.innerHTML = '<p class="muted">No closed positions yet.</p>';
+  }
+
+  const src = (r) => `<span class="tag">${esc(r.source)}${r.paper ? " · paper" : ""}</span>`;
+  const range = (r) => (r.inRange === undefined ? "–" : r.inRange
+    ? '<span class="state"><i style="background:var(--good)"></i>in range</span>'
+    : '<span class="state"><i style="background:var(--critical)"></i>out of range</span>');
+
+  function tables(s) {
+    const open = s.rows.filter((r) => r.status === "open");
+    $("open").innerHTML = open.length
+      ? `<tr><th>Pair</th><th>Source</th><th>Chain</th><th>Position</th><th class="num">Deposit</th><th class="num">Value</th><th class="num">Fees</th><th class="num">PnL</th><th>Range</th><th>Opened</th><th>Note</th></tr>` +
+        open.map((r) => `<tr><td>${esc(r.pair)}</td><td>${src(r)}</td><td>${esc(r.chain)}</td><td title="${esc(r.id)}">${esc(short(r.id))}</td>
+          <td class="num">${num(r.depositNative)}</td><td class="num">${num(r.valueNative)}</td><td class="num">${num(r.feesNative)}</td>
+          <td class="num">${r.pnlNative === undefined ? "–" : signed(r.pnlNative) + " (" + pct(r.pnlPct) + ")"}</td><td>${range(r)}</td><td>${date(r.openedAt)}</td><td class="muted">${esc(r.note)}</td></tr>`).join("")
+      : '<tr><td class="muted">No open positions.</td></tr>';
+    const closed = s.rows.filter((r) => r.status === "closed").sort((a, b) => (b.closedAt || 0) - (a.closedAt || 0));
+    $("closed").innerHTML = closed.length
+      ? `<tr><th>Pair</th><th>Source</th><th class="num">Deposit</th><th class="num">Returned</th><th class="num">PnL</th><th class="num">%</th><th>Held</th><th>Closed</th><th>Reason</th></tr>` +
+        closed.map((r) => `<tr><td>${esc(r.pair)}</td><td>${src(r)}</td><td class="num">${num(r.depositNative)} ${r.unit}</td><td class="num">${num(r.valueNative)}</td>
+          <td class="num">${signed(r.pnlNative)}</td><td class="num">${pct(r.pnlPct)}</td><td>${r.openedAt && r.closedAt ? held(r.closedAt - r.openedAt) : "–"}</td><td>${date(r.closedAt)}</td><td class="muted">${esc(r.note)}</td></tr>`).join("")
+      : '<tr><td class="muted">No closed positions.</td></tr>';
+    $("daily").innerHTML = s.daily.length
+      ? `<tr><th>Day (UTC)</th><th>Unit</th><th class="num">Closes</th><th class="num">Realized PnL</th></tr>` +
+        [...s.daily].reverse().map((d) => `<tr><td>${d.day}</td><td>${d.unit}</td><td class="num">${d.count}</td><td class="num">${signed(d.pnl)}</td></tr>`).join("")
+      : '<tr><td class="muted">Nothing yet.</td></tr>';
+  }
+
+  async function load(force) {
+    $("refresh").disabled = true;
+    try {
+      const r = await fetch("/api/summary" + (force ? "?refresh=1" : ""));
+      const s = await r.json();
+      if (!r.ok) throw new Error(s.error || r.status);
+      $("meta").textContent = `updated ${new Date(s.at).toLocaleTimeString()} · ${s.rows.length} positions`;
+      $("warnings").innerHTML = s.warnings.map((w) => `<div class="warn"><b>Incomplete:</b> ${esc(w)}</div>`).join("");
+      tiles(s); calendars(s); tables(s);
+    } catch (e) {
+      $("meta").textContent = "could not load: " + e.message;
+    } finally {
+      $("refresh").disabled = false;
+    }
+  }
+  $("refresh").onclick = () => load(true);
+  load(false);
+  setInterval(() => load(false), 60_000);
+})();
+</script>
+</body>
+</html>

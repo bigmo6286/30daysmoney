@@ -1,0 +1,28 @@
+name: pnl-dashboard
+on:
+  push:
+    paths: ["pnl-dashboard/**", "lp-bot/**", ".github/workflows/pnl-dashboard.yml"]
+  pull_request:
+    paths: ["pnl-dashboard/**", "lp-bot/**", ".github/workflows/pnl-dashboard.yml"]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            pnl-dashboard/package-lock.json
+            lp-bot/package-lock.json
+      - run: npm ci
+        working-directory: lp-bot
+      - run: npm ci
+        working-directory: pnl-dashboard
+      - run: npm run typecheck
+        working-directory: pnl-dashboard
+      - run: npm test
+        working-directory: pnl-dashboard
+      - run: npm run test:integration
+        working-directory: pnl-dashboard
