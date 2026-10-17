@@ -1,0 +1,16 @@
+name: setup-scripts
+on:
+  push:
+    paths: ["setup-scripts/**", ".github/workflows/setup-scripts.yml"]
+  pull_request:
+    paths: ["setup-scripts/**", ".github/workflows/setup-scripts.yml"]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: setup-scripts
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck -x install.sh install-termux.sh test/run.sh
+      - run: ./test/run.sh
