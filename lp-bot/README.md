@@ -34,7 +34,7 @@ On Robinhood Chain the bot also LPs in **Uniswap v4** pools. v4 has more trading
 - **Native-ETH pools without hooks only.** ETH is the bot's quote currency. A hook is arbitrary code that runs on every swap and liquidity change, so hooked pools are refused, even when pasted by pool id.
 - **Pools the V4Quoter can't price are skipped.** Some live pools revert `NotEnoughLiquidity` both ways, and a pool you can't price a sell on is one you might not get out of.
 - **How it trades:** swaps go through the UniversalRouter, positions through the v4 PositionManager. Both pull tokens via Permit2 with **exact** amounts that expire in an hour; nothing unlimited is left approved. Fees are read from StateView (fee growth inside the range minus the position's last snapshot).
-- **Not yet:** the autopilot's scanner indexes v3 pools only.
+- **The autopilot covers v4 too.** The scanner reads v3 and v4 Swap logs in one query, finds v4 pool keys through the PositionManager, keeps the same hookless native-ETH subset, and prices a position's yield from StateView fee growth exactly as for v3. `/scan` marks v4 pools. Only the configured fee tiers count (v4 also has 0%-fee pools, where an LP earns nothing). A v4 pool holds no balance of its own, so its "depth" is the ETH it would take to push the price 10% at the current liquidity.
 
 Tested against the real v4 contracts on a Robinhood Chain fork (`ALCHEMY_KEY=… npx vitest run test/integration/v4fork.test.ts`, pinned block 90,849,900):
 - the pool is found from a pasted token, and a pasted pool id resolves; a hooked pool is refused;
@@ -42,7 +42,8 @@ Tested against the real v4 contracts on a Robinhood Chain fork (`ALCHEMY_KEY=…
 - another wallet's trades earn fees, and `collect` pays exactly the fees computed from StateView, to the wei;
 - close burns the NFT and sells the token back into the same pool, leaving no token behind;
 - single-sided open and close;
-- paper mode on the same pool sends nothing.
+- paper mode on the same pool sends nothing;
+- the autopilot scanner indexes live v4 pools (hookless only), measures yield across two scans with a real trade in between, and runs the buy→sell round-trip check in the same pool.
 
 ## Free and Pro
 

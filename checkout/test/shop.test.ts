@@ -34,6 +34,19 @@ describe("telegram shop", () => {
     expect(chatOf(o)).toBe(42);
   });
 
+  it("carries the store link's ?ref= channel tag into the order; junk tags are dropped", () => {
+    const { s, book } = shop();
+    const r = s.handle(msg("/start buy_lp-bot__tg-robinhood")).replies[0]!;
+    expect(r.buttons![0]![0]!.data).toBe("c:lp-bot:solana:tg-robinhood");
+    expect(r.buttons![0]![0]!.data!.length).toBeLessThanOrEqual(64); // Telegram's callback limit
+    s.handle(tap(r.buttons![0]![0]!.data!));
+    expect(book.all()[0]!.ref).toBe("tg-robinhood");
+    const junk = s.handle(msg("/start buy_lp-bot__<script>")).replies[0]!;
+    expect(junk.buttons![0]![0]!.data).toBe("c:lp-bot:solana");
+    s.handle(tap("c:lp-bot:base:Bad Ref!"));
+    expect(book.all()[1]!.ref).toBeUndefined();
+  });
+
   it("anything else shows the menu; group chats are ignored (keys are private)", () => {
     const { s } = shop();
     expect(s.handle(msg("hello")).replies[0]!.buttons!.length).toBe(DEFAULT_PRODUCTS.length);

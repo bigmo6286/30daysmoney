@@ -13,6 +13,31 @@ concurrency:
 permissions:
   contents: read
 jobs:
+  # Run by hand (Actions → shop → Run workflow) to see which settings Actions can read: names
+  # only, set or missing, never values. A missing SHOP_ENABLED is why the tick job shows "skipped".
+  check:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          row() { if [ -n "$2" ]; then echo "| $1 | ✅ set |"; else echo "| $1 | ❌ missing |"; fi; }
+          {
+            echo "### Shop settings visible to Actions"
+            echo "| name | |"; echo "|---|---|"
+            row "vars.SHOP_ENABLED (= '$SHOP_ENABLED_VALUE', must be exactly true)" "$SHOP_ENABLED_VALUE"
+            row "vars.SHOP_BOT" "$V_SHOP_BOT"; row "vars.BASE_RECEIVER" "$V_BASE"; row "vars.SOL_RECEIVER" "$V_SOL"; row "vars.CONTACT" "$V_CONTACT"
+            row "secrets.SHOP_TG_TOKEN" "$S_TG"; row "secrets.LICENSE_PRIVATE_KEY" "$S_LIC"; row "secrets.ALCHEMY_KEY" "$S_ALC"; row "secrets.TG_OWNER_ID" "$S_OWNER"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+        env:
+          SHOP_ENABLED_VALUE: ${{ vars.SHOP_ENABLED }}
+          V_SHOP_BOT: ${{ vars.SHOP_BOT }}
+          V_BASE: ${{ vars.BASE_RECEIVER }}
+          V_SOL: ${{ vars.SOL_RECEIVER }}
+          V_CONTACT: ${{ vars.CONTACT }}
+          S_TG: ${{ secrets.SHOP_TG_TOKEN != '' && 'x' || '' }}
+          S_LIC: ${{ secrets.LICENSE_PRIVATE_KEY != '' && 'x' || '' }}
+          S_ALC: ${{ secrets.ALCHEMY_KEY != '' && 'x' || '' }}
+          S_OWNER: ${{ secrets.TG_OWNER_ID != '' && 'x' || '' }}
   tick:
     if: vars.SHOP_ENABLED == 'true'
     runs-on: ubuntu-latest

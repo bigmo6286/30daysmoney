@@ -19,6 +19,8 @@ import { LpService } from "../../src/lp/service";
 import { readPoolView } from "../../src/chain/pools";
 import { encodeV4Swap, quoteV4, V4_POSM_ABI } from "../../src/chain/v4";
 import { CHAINS } from "../../src/chains";
+import { Scanner } from "../../src/auto/scanner";
+import { Autopilot } from "../../src/auto/autopilot";
 import { BOT_KEY, TRADER_KEY } from "./env";
 
 const ALCHEMY = process.env.ALCHEMY_KEY?.trim();
@@ -42,6 +44,7 @@ let provider: ethers.JsonRpcProvider;
 let lp: LpService;
 let paper: LpService;
 let bot: string;
+let url: string;
 
 async function rpcUp(url: string) {
   for (let i = 0; i < 400; i++) {
@@ -57,9 +60,9 @@ async function rpcUp(url: string) {
 }
 
 /** someone else trades through the pool: ETH → token, so the position earns fees in ETH */
-async function traderBuys(eth: string) {
+async function traderBuys(eth: string, poolId = POOL_ID) {
   const trader = new ethers.Wallet(TRADER_KEY, provider);
-  const key = (await readPoolView(lp.chain, POOL_ID)).v4Key!;
+  const key = (await readPoolView(lp.chain, poolId)).v4Key!;
   const data = encodeV4Swap(key, true, ethers.parseEther(eth), 0n, Math.floor(Date.now() / 1000) + 3600);
   await (await trader.sendTransaction({ to: v4.universalRouter, data, value: ethers.parseEther(eth) })).wait();
 }
@@ -72,7 +75,7 @@ describe.skipIf(!FORK_URL)("Uniswap v4 on a Robinhood Chain fork", () => {
       stdio: "ignore",
       env: { ...process.env, HH_CHAIN_ID: "4663", HARDHAT_DISABLE_TELEMETRY_PROMPT: "true" },
     });
-    const url = `http://127.0.0.1:${port}`;
+    url = `http://127.0.0.1:${port}`;
     await rpcUp(url);
     provider = new ethers.JsonRpcProvider(url, 4663, { staticNetwork: true, cacheTimeout: -1 });
     await provider.send("evm_mine", []); // calls at the fork block itself need a hardfork history; one local block avoids it
@@ -190,5 +193,50 @@ describe.skipIf(!FORK_URL)("Uniswap v4 on a Robinhood Chain fork", () => {
     await paper.close(rec.id, "test");
     expect(await provider.getTransactionCount(bot)).toBe(nonce);
   }, 240_000);
+
+  it("autopilot scanner: indexes hookless native-ETH v4 pools from Swap logs and measures their fee yield", async () => {
+    // pool discovery reads logs from the public RPC (the fork would relay them to Alchemy's 10-block cap);
+    // all state is read from the fork
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "v4-scan-"));
+    const cfg = loadConfig({ MODE: "paper", CHAIN: "robinhood", RPC_URL: url, LOGS_RPC_URL: "https://rpc.mainnet.chain.robinhood.com", TG_TOKEN: "1:" + "x".repeat(35), TG_OWNER_ID: "1", DATA_DIR: dataDir });
+    const settings = new SettingsStore(dataDir);
+    settings.set("autoMinDepthEth", "0.2");
+    // a cold fork fetches every storage slot of a batched call from upstream, one by one
+    process.env.RPC_TIMEOUT_MS = "300000";
+    const chain = new Chain(cfg);
+    delete process.env.RPC_TIMEOUT_MS;
+    const scanLp = new LpService(chain, new PositionBook(dataDir), () => settings.value, true);
+    const scanner = new Scanner(chain, () => settings.value, dataDir);
+    process.env.SCAN_LOOKBACK_BLOCKS = "2000";
+    await scanner.scan();
+    const first = scanner.ranked();
+    const v4s = first.filter((c) => c.version === 4);
+    expect(v4s.length).toBeGreaterThan(0);
+    for (const c of v4s) expect((await readPoolView(chain, c.pool)).v4Key!.hooks).toBe(ethers.ZeroAddress);
+    for (const c of v4s) expect(c.depthWei).toBeGreaterThanOrEqual(ethers.parseEther("0.2")); // autoMinDepthEth
+
+    // the autopilot's round-trip check runs through the v4 pool itself; take the first that passes
+    const auto = new Autopilot(scanLp, scanner, () => settings.value, async () => undefined, dataDir);
+    let target;
+    for (const c of [...v4s].sort((a, b) => (b.depthWei > a.depthWei ? 1 : -1))) {
+      if ((await auto.roundTrip(c, ethers.parseEther("0.01"))).ok) {
+        target = c;
+        break;
+      }
+    }
+    expect(target).toBeDefined();
+
+    // someone trades through it (small against its depth, so the price stays in range), time
+    // passes, and the next scan prices what an in-range position earned
+    const size = target!.depthWei / 100n < ethers.parseEther("0.05") ? target!.depthWei / 100n : ethers.parseEther("0.05");
+    await traderBuys(ethers.formatEther(size), target!.pool);
+    await new Promise((r) => setTimeout(r, 31_000)); // the scanner needs ≥30 s between readings
+    await scanner.scan();
+    const again = scanner.get(target!.pool)!;
+    expect(again.version).toBe(4);
+    expect(again.samples).toBe(1);
+    expect(again.aprPct).toBeGreaterThan(0);
+    delete process.env.SCAN_LOOKBACK_BLOCKS;
+  }, 600_000);
 });
 

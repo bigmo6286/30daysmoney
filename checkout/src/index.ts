@@ -33,7 +33,7 @@ async function main() {
   const onPaid = async (o: Order) => {
     const license = issue({ order: o.id, product: o.product, contact: o.contact, issued: Date.now() }, cfg.licenseKey);
     book.setLicense(o.id, license);
-    fs.appendFileSync(path.join(cfg.dataDir, "sales.csv"), `${new Date(o.paid!.at).toISOString()},${o.id},${o.product},${o.chain},${fmtUsdc(o.amountMicro)},${o.paid!.txid},${JSON.stringify(o.contact)}\n`);
+    fs.appendFileSync(path.join(cfg.dataDir, "sales.csv"), `${new Date(o.paid!.at).toISOString()},${o.id},${o.product},${o.chain},${fmtUsdc(o.amountMicro)},${o.paid!.txid},${JSON.stringify(o.contact)},${o.ref ?? ""}\n`);
     log.info(`PAID ${o.id} ${o.product} ${fmtUsdc(o.amountMicro)} USDC on ${o.chain}`);
     await notify(`💸 Sale: ${o.product} · ${fmtUsdc(o.amountMicro)} USDC on ${o.chain}${o.paid!.late ? " (paid after expiry)" : ""}\norder ${o.id} · contact ${o.contact}\ntx ${o.paid!.txid}`);
   };

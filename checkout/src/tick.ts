@@ -74,11 +74,11 @@ async function main() {
   const onPaid = async (o: Order) => {
     book.setLicense(o.id, issue({ order: o.id, product: o.product, contact: o.contact, issued: Date.now() }, cfg.licenseKey));
     const paid = book.get(o.id)!;
-    fs.appendFileSync(path.join(cfg.dataDir, "sales.csv"), `${new Date(paid.paid!.at).toISOString()},${paid.id},${paid.product},${paid.chain},${fmtUsdc(paid.amountMicro)},${paid.paid!.txid},${JSON.stringify(paid.contact)}\n`);
+    fs.appendFileSync(path.join(cfg.dataDir, "sales.csv"), `${new Date(paid.paid!.at).toISOString()},${paid.id},${paid.product},${paid.chain},${fmtUsdc(paid.amountMicro)},${paid.paid!.txid},${JSON.stringify(paid.contact)},${paid.ref ?? ""}\n`);
     log.info(`PAID ${paid.id} ${paid.product} ${fmtUsdc(paid.amountMicro)} USDC on ${paid.chain}`);
     const d = shop.delivery(paid);
     if (d) await tg.send(d).catch((err) => log.warn(`deliver ${paid.id}: ${err.message}`));
-    await owner(`💸 Sale: ${paid.product} · ${fmtUsdc(paid.amountMicro)} USDC on ${paid.chain}${paid.paid!.late ? " (paid after expiry)" : ""}\norder ${paid.id} · ${paid.contact}\ntx ${paid.paid!.txid}`);
+    await owner(`💸 Sale: ${paid.product} · ${fmtUsdc(paid.amountMicro)} USDC on ${paid.chain}${paid.paid!.late ? " (paid after expiry)" : ""}\norder ${paid.id} · ${paid.contact}${paid.ref ? ` · via ${paid.ref}` : ""}\ntx ${paid.paid!.txid}`);
   };
   const watchers = [
     ["solana", cfg.solReceiver ? new SolanaWatcher(cfg.solRpc, cfg.solReceiver, st.solana ?? {}) : null],

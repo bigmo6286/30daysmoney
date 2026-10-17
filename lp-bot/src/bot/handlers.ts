@@ -188,7 +188,8 @@ export class Handlers {
       case "ref":
         return this.list();
       case "o": {
-        const pool = await readPoolView(this.lp.chain, arg!);
+        const id = this.auto?.scanner.ranked().find((c) => c.pool.toLowerCase().startsWith(arg!.toLowerCase()))?.pool ?? arg!;
+        const pool = await readPoolView(this.lp.chain, id);
         this.draft = { pools: [pool], pool, awaitingAmount: true };
         return void (await this.tg.send(`<b>${esc(pool.token.symbol)}</b> · ${feeTier(pool.fee)} pool\nHow much ETH? (e.g. <code>0.05</code>)`));
       }
@@ -274,9 +275,9 @@ export class Handlers {
       const g = this.auto!.gate(c, set);
       const sc = this.auto!.cachedScreen(c.token, set);
       const screen = !sc ? "" : sc.ok ? " 🧪✅" : ` 🧪🚫 <i>${esc(sc.reason ?? "")}</i>`;
-      return `${i + 1}. <b>${esc(c.symbol)}</b> ${feeTier(c.fee)} · APR ${c.aprEmaPct.toFixed(0)}% · depth ${eth(c.depthWei, 2)} · ${c.swaps} swaps · move ${pct(c.movePct)}${g.ok ? " ✅" : ` <i>(${esc(g.reason ?? "")})</i>`}${screen}`;
+      return `${i + 1}. <b>${esc(c.symbol)}</b> ${c.version === 4 ? "v4 " : ""}${feeTier(c.fee)} · APR ${c.aprEmaPct.toFixed(0)}% · depth ${eth(c.depthWei, 2)} · ${c.swaps} swaps · move ${pct(c.movePct)}${g.ok ? " ✅" : ` <i>(${esc(g.reason ?? "")})</i>`}${screen}`;
     });
-    const kb: Keyboard = ready.slice(0, 4).map((c) => [{ text: `🎯 LP ${c.symbol} ${feeTier(c.fee)}`, data: `o:${c.pool}` }]);
+    const kb: Keyboard = ready.slice(0, 4).map((c) => [{ text: `🎯 LP ${c.symbol} ${feeTier(c.fee)}`, data: `o:${c.pool.slice(0, 42)}` }]); // a v4 pool id is too long for Telegram's 64-byte callback data
     await this.tg.send(
       `🔎 <b>Top pools</b> · fee APR measured for a ${set.autoSizeEth} ETH position at ±${set.widthPct}%\n\n${lines.join("\n")}\n\n✅ = passes the autopilot gates · 🧪 = Jev screen (cached)`,
       kb,

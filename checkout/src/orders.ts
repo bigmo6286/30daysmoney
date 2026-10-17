@@ -29,6 +29,8 @@ export interface Order {
   expiresAt: number;
   status: "pending" | "paid" | "expired";
   paid?: { txid: string; from: string; at: number; late: boolean };
+  /** where the buyer came from (store link ?ref=), for seeing which channel sells */
+  ref?: string;
   license?: string;
 }
 
@@ -69,7 +71,7 @@ export class OrderBook {
     return this.data.orders;
   }
 
-  create(product: string, priceUsd: number, chain: Chain, contact: string): Order {
+  create(product: string, priceUsd: number, chain: Chain, contact: string, ref?: string): Order {
     const base = Math.round(priceUsd * 1e6);
     const t = this.now();
     const taken = new Set(
@@ -88,6 +90,7 @@ export class OrderBook {
       createdAt: t,
       expiresAt: t + this.ttlMs,
       status: "pending",
+      ...(ref ? { ref } : {}),
     };
     this.data.orders.push(o);
     this.save();

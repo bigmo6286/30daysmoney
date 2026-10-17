@@ -43,6 +43,9 @@ const usd = (n: number) => `$${n % 1 ? n.toFixed(2) : n}`;
 
 /** contact stored on the order: the chat to deliver to, plus the @handle for the seller */
 export const tgContact = (chatId: number, username?: string) => `tg:${chatId}${username ? ` @${username}` : ""}`;
+/** refs are channel tags like "x" or "tg-robinhood": anything else is dropped */
+export const cleanRef = (r?: string) => (r && /^[a-z0-9-]{1,16}$/.test(r) ? r : undefined);
+
 export const chatOf = (o: Order): number | null => {
   const m = /^tg:(-?\d+)/.exec(o.contact);
   return m ? Number(m[1]) : null;
@@ -67,11 +70,11 @@ export class Shop {
     };
   }
 
-  private pickChain(chatId: number, p: Product): Reply {
+  private pickChain(chatId: number, p: Product, ref?: string): Reply {
     return {
       chatId,
       text: `<b>${esc(p.name)}</b> · ${usd(p.priceUsd)} USDC, one-time\n${esc(p.blurb)}\n\nPay with USDC on:`,
-      buttons: [this.chains().map((c) => ({ text: CHAIN_NAME[c], data: `c:${p.id}:${c}` }))],
+      buttons: [this.chains().map((c) => ({ text: CHAIN_NAME[c], data: `c:${p.id}:${c}${ref ? `:${ref}` : ""}` }))],
     };
   }
 
@@ -132,12 +135,12 @@ export class Shop {
     if (u.callback_query) {
       const q = u.callback_query;
       const chatId = q.message?.chat.id ?? q.from.id;
-      const [kind, productId, chain] = (q.data ?? "").split(":");
+      const [kind, productId, chain, rawRef] = (q.data ?? "").split(":");
       const p = productId ? this.product(productId) : undefined;
       if (kind === "p" && p) return { replies: [this.pickChain(chatId, p)], answerCallback: q.id };
       if (kind === "c" && p && (chain === "solana" || chain === "base") && this.d.receivers[chain]) {
         try {
-          const o = this.d.book.create(p.id, p.priceUsd, chain, tgContact(chatId, q.from.username));
+          const o = this.d.book.create(p.id, p.priceUsd, chain, tgContact(chatId, q.from.username), cleanRef(rawRef));
           return { replies: [this.payment(chatId, o, p)], answerCallback: q.id };
         } catch (e) {
           return { replies: [{ chatId, text: `⚠️ ${esc(e instanceof Error ? e.message : String(e))}` }], answerCallback: q.id };
@@ -151,8 +154,10 @@ export class Shop {
     const [cmd, arg] = m.text.trim().split(/\s+/);
     if (cmd === "/status") return { replies: this.status(chatId) };
     if (cmd === "/start" && arg?.startsWith("buy_")) {
-      const p = this.product(arg.slice(4));
-      if (p) return { replies: [this.pickChain(chatId, p)] };
+      // buy_<product> or buy_<product>__<ref> (the store page passes its ?ref= through)
+      const [productId, ref] = arg.slice(4).split("__");
+      const p = this.product(productId ?? "");
+      if (p) return { replies: [this.pickChain(chatId, p, cleanRef(ref))] };
     }
     return { replies: [this.menu(chatId)] };
   }
