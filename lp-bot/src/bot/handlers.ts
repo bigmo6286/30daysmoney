@@ -283,6 +283,7 @@ export class Handlers {
         `size ${s.autoSizeEth} ETH · max open ${s.autoMaxOpen} (now ${open.length}) · ${s.autoMode}`,
         `budget ${eth(this.auto.spentToday())} / ${s.autoDailyEth} ETH today`,
         `opens when: APR ≥ ${s.autoMinAprPct}% · depth ≥ ${s.autoMinDepthEth} ETH · move ≤ ${s.autoMaxMovePct}% · round-trip check`,
+        `screening: ${!s.autoScreen ? "off" : this.auto.screener ? `${esc(this.auto.screener.name)} · block if copycat > ${s.autoMaxCopycatPct}% · rug signs > ${s.autoMaxRugPct}% · risk > ${s.autoMaxRiskPct}%` : "on, but no TYPESAFE_API_KEY: nothing will open"}`,
         `closes when: out of range ${s.autoCloseOorMin}m · APR < ${s.autoExitAprPct}% after ${s.autoGraceMin}m${s.tpPct ? ` · TP ${s.tpPct}%` : ""}${s.slPct ? ` · SL ${s.slPct}%` : ""}`,
         `scan every ${s.autoScanMin}m · ${this.auto.scanner.indexedCount} active pools tracked`,
         "",

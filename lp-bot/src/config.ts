@@ -51,6 +51,12 @@ export const SettingsSchema = z.object({
   autoCloseOorMin: z.number().min(0).default(60),
   /** Don't re-enter a token the autopilot just exited for this long. */
   autoCooldownHours: z.number().min(0).default(12),
+  /** Ask the screener (Jev) about each token before auto-opening. On without TYPESAFE_API_KEY = no opens. */
+  autoScreen: z.boolean().default(true),
+  /** Block an open when the screener's probability (%) is above these. */
+  autoMaxCopycatPct: z.number().min(0).max(100).default(50),
+  autoMaxRugPct: z.number().min(0).max(100).default(40),
+  autoMaxRiskPct: z.number().min(0).max(100).default(60),
   dailyReport: z.boolean().default(true),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
@@ -66,6 +72,9 @@ export interface AppConfig {
   tgToken: string;
   tgOwnerId: string;
   dataDir: string;
+  /** TypeSafe key for Jev token screening; empty = no screener */
+  typesafeKey: string;
+  jevModel: string;
 }
 
 function chainFromEnv(e: NodeJS.ProcessEnv): ChainPreset {
@@ -124,6 +133,8 @@ export function loadConfig(e: NodeJS.ProcessEnv = process.env): AppConfig {
     tgToken,
     tgOwnerId,
     dataDir: path.resolve(e.DATA_DIR || "data"),
+    typesafeKey: (e.TYPESAFE_API_KEY || "").trim(),
+    jevModel: (e.JEV_MODEL || "jev-latest").trim(),
   };
 }
 
