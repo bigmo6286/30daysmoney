@@ -12,7 +12,7 @@ import { issue } from "./license";
 import { SolanaWatcher } from "./watch/solana";
 import { BaseWatcher } from "./watch/base";
 import { readJson, writeJsonAtomic } from "./store";
-import { Shop, type Button, type Reply, type Update } from "./shop";
+import { sellable, Shop, type Button, type Reply, type Update } from "./shop";
 import { logger } from "./log";
 
 const log = logger("tick");
@@ -47,10 +47,13 @@ async function main() {
   if (!shopToken) throw new Error("SHOP_TG_TOKEN is required: a Telegram bot just for the shop (not the one your lp-bot uses)");
   const tg = new TelegramApi(shopToken);
   const checkEveryMin = Number(e.CHECK_EVERY_MIN || 5);
-  const products = loadProducts(cfg.dataDir);
+  const guideKey = (e.GUIDE_KEY || "").trim();
+  const storeUrl = (e.STORE_URL || "").trim();
+  const guide = guideKey && storeUrl ? { storeUrl, key: guideKey } : undefined;
+  const products = sellable(loadProducts(cfg.dataDir), !!guide);
   const book = new OrderBook(cfg.dataDir, cfg.orderTtlMin * 60_000);
   const receivers = { ...(cfg.solReceiver ? { solana: cfg.solReceiver } : {}), ...(cfg.baseReceiver ? { base: cfg.baseReceiver } : {}) };
-  const shop = new Shop({ book, products, receivers, contact: cfg.contact, checkEveryMin });
+  const shop = new Shop({ book, products, receivers, contact: cfg.contact, checkEveryMin, guide });
   const stateFile = path.join(cfg.dataDir, "watchers.json");
   const st = readJson<{ solana?: { cursor?: string }; base?: { next?: number }; tgOffset?: number }>(stateFile, {});
   const save = (extra: object) => writeJsonAtomic(stateFile, { ...readJson(stateFile, {}), ...extra });

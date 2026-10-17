@@ -6,17 +6,24 @@ name: shop
 on:
   schedule:
     - cron: "*/5 * * * *"
+  # also called every 5 min by an external cron (GitHub's own schedule starts late and skips runs
+  # under load); see checkout/README.md#reliable-timing
   workflow_dispatch:
+    inputs:
+      check:
+        description: "Also list which shop settings Actions can see"
+        type: boolean
+        default: false
 concurrency:
   group: shop
   cancel-in-progress: false
 permissions:
   contents: read
 jobs:
-  # Run by hand (Actions → shop → Run workflow) to see which settings Actions can read: names
-  # only, set or missing, never values. A missing SHOP_ENABLED is why the tick job shows "skipped".
+  # Run by hand (Actions → shop → Run workflow, tick "check") to see which settings Actions can
+  # read: names only, set or missing, never values. A missing SHOP_ENABLED is why tick is skipped.
   check:
-    if: github.event_name == 'workflow_dispatch'
+    if: inputs.check
     runs-on: ubuntu-latest
     steps:
       - run: |
@@ -72,6 +79,8 @@ jobs:
           BASE_RECEIVER: ${{ vars.BASE_RECEIVER }}
           CONTACT: ${{ vars.CONTACT }}
           CHECK_EVERY_MIN: "5"
+          GUIDE_KEY: ${{ secrets.GUIDE_KEY }}
+          STORE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
       # save even if the tick failed halfway (it records progress as it goes), but never after a
       # failed unpack: that would replace the real orders with an empty book
       - if: always() && steps.unpack.outcome == 'success'

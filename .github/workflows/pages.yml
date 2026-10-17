@@ -6,7 +6,7 @@ name: pages
 on:
   push:
     branches: [main]
-    paths: ["checkout/public/store.html", "checkout/src/site.ts", "checkout/src/config.ts", ".github/workflows/**"]
+    paths: ["checkout/public/**", "checkout/src/site.ts", "checkout/src/config.ts", ".github/workflows/**"]
   workflow_dispatch:
 permissions:
   contents: read

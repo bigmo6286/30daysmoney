@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>30daysmoney guide</title>
+<style>
+:root { --bg: #f7f7f5; --panel: #ffffff; --ink: #16181d; --muted: #5d6470; --line: #e3e4e8; --accent: #2f6df6; --warn: #a3620b; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f1115; --panel: #171a21; --ink: #eceef2; --muted: #9aa3b2; --line: #2a2f3a; --accent: #6d97ff; --warn: #e2a64b; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.65 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 760px; margin: 0 auto; padding: 40px 16px 80px; overflow-wrap: anywhere; }
+h1 { font-size: clamp(28px, 5vw, 38px); line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 6px; }
+h2 { font-size: 23px; margin: 44px 0 10px; letter-spacing: -0.01em; }
+h3 { font-size: 18px; color: var(--muted); font-weight: 500; margin: 0 0 18px; }
+a { color: var(--accent); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 32px 0; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em; background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+pre { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto; max-width: 100%; overflow-wrap: normal; }
+pre code { border: 0; padding: 0; background: none; font-size: 13.5px; line-height: 1.55; }
+table { border-collapse: collapse; margin: 14px 0; font-size: 15px; display: block; max-width: 100%; overflow-x: auto; }
+th, td { border-bottom: 1px solid var(--line); padding: 8px 10px; text-align: left; overflow-wrap: normal; }
+th { color: var(--muted); font-weight: 600; }
+blockquote { margin: 16px 0; padding: 10px 16px; border-left: 3px solid var(--accent); background: var(--panel); border-radius: 0 8px 8px 0; }
+li { margin: 4px 0; }
+.msg { color: var(--muted); }
+.msg.err { color: var(--warn); }
+</style>
+</head>
+<body>
+<main id="doc"><p class="msg" id="msg">Opening your guide…</p></main>
+<script>
+(async () => {
+  const msg = document.getElementById("msg");
+  const fail = (t) => { msg.textContent = t; msg.className = "msg err"; };
+  // #g=<name>&k=<key>: the fragment never leaves the browser
+  const p = new URLSearchParams(location.hash.slice(1));
+  const name = p.get("g") || "", key = p.get("k") || "";
+  if (!/^[a-z0-9-]{1,40}$/.test(name) || !key) return fail("This link is incomplete. Use the full link from your purchase message.");
+  try {
+    const sealed = await (await fetch(`guides/${name}.json`, { cache: "no-store" })).json();
+    const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+    const raw = Uint8Array.from(atob(key.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (key.length % 4)) % 4)), (c) => c.charCodeAt(0));
+    const k = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
+    const html = new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(sealed.iv) }, k, b64(sealed.ct)));
+    document.getElementById("doc").innerHTML = html; // our own content, authenticated by the GCM tag
+    document.title = (document.querySelector("h1")?.textContent || "Guide") + " · 30daysmoney";
+  } catch {
+    fail("Couldn't open the guide with this link. Check you copied all of it; if it still fails, message the seller with your order id.");
+  }
+})();
+</script>
+</body>
+</html>

@@ -78,4 +78,8 @@ Week 1: first sale · Week 2: $500 · Week 3: $1,200 · Week 4: $2,000
 - lp-bot autopilot on v4: the scanner indexes v4 pools next to v3 and measures their yield; the round-trip check trades in the pool itself. Found and fixed on the way: one non-pool contract emitting a Swap-shaped log stopped the whole pool index.
 - `launch/LAUNCH.md`: X thread, group post, long post, a week-1 posting schedule. Store links take `?ref=`, which rides into the order, so sales show which channel paid.
 
+- **Revenue stream 3, the guide, is built:** "Flash-loan arbitrage guide", $19 in the shop.
+  - It uses real numbers measured on a mainnet fork: sizing curves (64 WETH earns 0.161 on a 300-WETH gap, 256 WETH loses 0.88) and gas of 0.51M–1.23M.
+  - Delivered encrypted: the store page decrypts it in the browser with the key in the buyer's link. The plain text never enters the public repo.
+
 **Still needed (owner):** a burner wallet with a little ETH on Robinhood Chain for the first live (non-paper) run; a second Telegram bot for the shop, and the GitHub secrets/variables in checkout/README.md#serverless-shop (USDC on Base goes to 0x51F0…67A7). A Telegram bot (@thirtydaysmoney_bot) and the RPC are in place.
