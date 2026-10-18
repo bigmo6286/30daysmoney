@@ -48,6 +48,12 @@ async function main() {
   if (!shopToken) throw new Error("SHOP_TG_TOKEN is required: a Telegram bot just for the shop (not the one your lp-bot uses)");
   const tg = new TelegramApi(shopToken);
   const checkEveryMin = Number(e.CHECK_EVERY_MIN || 5);
+  const shopBot = (e.SHOP_BOT || "").replace(/^@/, "").trim();
+  const refPct = (v?: string) => {
+    const n = Number(v || 20);
+    if (!(n >= 0 && n <= 50)) throw new Error("REF_PCT must be a number from 0 to 50 (the affiliate commission, %)");
+    return n;
+  };
   const guideKey = (e.GUIDE_KEY || "").trim();
   const storeUrl = (e.STORE_URL || "").trim();
   const guide = guideKey && storeUrl ? { storeUrl, key: guideKey } : undefined;
@@ -56,6 +62,8 @@ async function main() {
   const receivers = { ...(cfg.solReceiver ? { solana: cfg.solReceiver } : {}), ...(cfg.baseReceiver ? { base: cfg.baseReceiver } : {}) };
   const shop = new Shop({ book, products, receivers, contact: cfg.contact, checkEveryMin, guide, storeUrl: storeUrl || undefined,
     watches: new Watches(cfg.dataDir),
+    // affiliates earn REF_PCT% (default 20) of sales through their /invite link; needs the shop bot's username
+    affiliate: shopBot ? { pct: refPct(e.REF_PCT), botName: shopBot } : undefined,
     // buying during the trial adds on to it (issueFor counts trial keys as the buyer's earlier keys)
     trial: { product: "pnl-pro", days: 7, issue: (chatId: number, contact: string, days: number) => issue(payloadFor({ id: `trial-${chatId}`, product: "pnl-pro", contact }, days), cfg.licenseKey) }, ownerId: /^-?\d+$/.test(cfg.tgOwnerId) ? Number(cfg.tgOwnerId) : undefined });
   const stateFile = path.join(cfg.dataDir, "watchers.json");
@@ -85,7 +93,9 @@ async function main() {
     log.info(`PAID ${paid.id} ${paid.product} ${fmtUsdc(paid.amountMicro)} USDC on ${paid.chain}`);
     const d = shop.delivery(paid);
     if (d) await tg.send(d).catch((err) => log.warn(`deliver ${paid.id}: ${err.message}`));
-    await owner(`💸 Sale: ${paid.product} · ${fmtUsdc(paid.amountMicro)} USDC on ${paid.chain}${paid.paid!.late ? " (paid after expiry)" : ""}\norder ${paid.id} · ${paid.contact}${paid.ref ? ` · via ${paid.ref}` : ""}\ntx ${paid.paid!.txid}`);
+    const aff = shop.commission(paid);
+    for (const r of aff.replies) await tg.send(r).catch((err) => log.warn(`affiliate ${paid.id}: ${err.message}`));
+    await owner(`💸 Sale: ${paid.product} · ${fmtUsdc(paid.amountMicro)} USDC on ${paid.chain}${paid.paid!.late ? " (paid after expiry)" : ""}\norder ${paid.id} · ${paid.contact}${paid.ref ? ` · via ${paid.ref}` : ""}\ntx ${paid.paid!.txid}${aff.ownerNote ? `\n${aff.ownerNote}` : ""}`);
   };
   const watchers = [
     ["solana", cfg.solReceiver ? new SolanaWatcher(cfg.solRpc, cfg.solReceiver, st.solana ?? {}) : null],

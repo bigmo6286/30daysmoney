@@ -337,4 +337,46 @@ describe("subscriptions", () => {
     expect(s.proUntil(50)).toBe(Infinity);
     expect(s.proUntil(51)).toBeNull();
   });
+
+  it("affiliates: /invite link, referral sticks to the chat, 20% commission on the paid order, no self-referral, /payout, owner /stats + /paidout", () => {
+    const dir = tmp();
+    const book = new OrderBook(dir);
+    const s = new Shop({ book, products: DEFAULT_PRODUCTS, receivers: { base: BASE }, contact: "", checkEveryMin: 5, ownerId: 1, storeUrl: "https://x.github.io/repo", affiliate: { pct: 20, botName: "my_shop_bot" } });
+    const AFF = 777;
+    const code = `u-${AFF.toString(36)}`;
+    const inv = s.handle(msg("/invite", AFF)).replies[0]!.text;
+    expect(inv).toContain(`https://t.me/my_shop_bot?start=${code}`);
+    expect(inv).toContain(`https://x.github.io/repo/?ref=${code}`);
+    expect(inv).toContain("Earn 20%");
+    // a buyer arrives through the link; later buys from the menu (no ref on the button) and still counts
+    s.handle(msg(`/start ${code}`, 900));
+    s.handle(msg("/start u-zzz", 900)); // first referral sticks
+    expect(book.referrerOf(900)).toBe(code);
+    s.handle(tap("c:lp-bot:base", 900));
+    const o = book.all()[0]!;
+    expect(o.ref).toBe(code);
+    expect(s.commission(o).replies).toEqual([]); // not paid yet
+    book.match({ chain: "base", txid: "0x1", amountMicro: o.amountMicro, from: "0xf", at: Date.now() });
+    const c = s.commission(book.get(o.id)!);
+    expect(c.replies[0]).toMatchObject({ chatId: AFF });
+    expect(c.replies[0]!.text).toContain("You earned <b>$9.80</b>");
+    expect(c.replies[0]!.text).toContain("/payout");
+    expect(c.ownerNote).toContain(`affiliate ${code}: owe $9.80 (no payout address yet)`);
+    expect(s.commission(book.get(o.id)!).replies).toEqual([]); // once per order
+    // self-referral earns nothing
+    s.handle(msg(`/start ${code}`, AFF));
+    expect(book.referrerOf(AFF)).toBeUndefined();
+    s.handle(tap(`c:pnl-pro:base:${code}`, AFF));
+    const own = book.all().at(-1)!;
+    book.match({ chain: "base", txid: "0x2", amountMicro: own.amountMicro, from: "0xf", at: Date.now() });
+    expect(s.commission(book.get(own.id)!).replies).toEqual([]);
+    // payout address, owner view, paid out
+    expect(s.handle(msg("/payout nope", AFF)).replies[0]!.text).toContain("Send <code>/payout 0x");
+    s.handle(msg(`/payout ${BASE}`, AFF));
+    expect(s.handle(msg("/invite", AFF)).replies[0]!.text).toContain("$9.80 not yet sent");
+    expect(s.handle(msg("/stats", 1)).replies[0]!.text).toContain(`${code}: $9.80 → <code>${BASE}</code>`);
+    expect(s.handle(msg(`/paidout ${code}`, AFF)).replies[0]!.text).not.toContain("Marked"); // owner only
+    expect(s.handle(msg(`/paidout ${code}`, 1)).replies[0]!.text).toContain("Marked $9.80");
+    expect(s.handle(msg("/stats", 1)).replies[0]!.text).not.toContain("Affiliates to pay");
+  });
 });

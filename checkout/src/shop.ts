@@ -42,6 +42,8 @@ export interface ShopDeps {
   trial?: { product: string; days: number; issue: (chatId: number, contact: string, days: number) => string };
   /** range alerts (Pro): the watch list; off when absent */
   watches?: Watches;
+  /** affiliate program: commission % of each referred sale, and the shop bot's username for /invite links; off when absent */
+  affiliate?: { pct: number; botName: string };
   /** the seller's Telegram id: only this chat gets /stats */
   ownerId?: number;
   /** revenue target shown in /stats */
@@ -70,6 +72,7 @@ const PRO_PRODUCTS = ["pnl-pro", "pnl-lifetime", "lp-bot", "lp-bot-setup", "dlmm
 
 const CHAIN_NAME: Record<Chain, string> = { solana: "Solana", base: "Base" };
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const usd2 = (n: number) => `$${n.toFixed(2)}`;
 const usd = (n: number) => `$${n % 1 ? n.toFixed(2) : n}`;
 
 /** contact stored on the order: the chat to deliver to, plus the @handle for the seller */
@@ -96,7 +99,7 @@ export class Shop {
   private menu(chatId: number): Reply {
     return {
       chatId,
-      text: `<b>30daysmoney</b>\nLP bots, the PnL dashboard and guides. Pay in USDC; your key arrives here.${this.trialOn() ? "\n/trial: Dashboard Pro free for 7 days." : ""}${this.d.watches ? "\n/watch: Telegram alerts when an LP position leaves its range (Pro)." : ""}\nPick a product:`,
+      text: `<b>30daysmoney</b>\nLP bots, the PnL dashboard and guides. Pay in USDC; your key arrives here.${this.trialOn() ? "\n/trial: Dashboard Pro free for 7 days." : ""}${this.d.watches ? "\n/watch: Telegram alerts when an LP position leaves its range (Pro)." : ""}${this.d.affiliate ? `\n/invite: earn ${this.d.affiliate.pct}% of every sale you bring.` : ""}\nPick a product:`,
       buttons: this.d.products.map((p) => [{ text: `${p.name} · ${usd(p.priceUsd)}`, data: `p:${p.id}` }]),
     };
   }
@@ -298,6 +301,67 @@ export class Shop {
     return out;
   }
 
+  private affCode = (chatId: number) => `u-${chatId.toString(36)}`;
+
+  /** The affiliate's link and terms, and what they've earned so far. */
+  private inviteCmd(chatId: number): Reply {
+    const a = this.d.affiliate!;
+    const code = this.affCode(chatId);
+    const mine = this.d.book.commissions().filter((c) => c.referrer === chatId);
+    const earned = mine.reduce((s, c) => s + c.usd, 0);
+    const paid = mine.filter((c) => c.paidAt).reduce((s, c) => s + c.usd, 0);
+    const payout = this.d.book.payoutOf(chatId);
+    const store = this.d.storeUrl ?? this.d.guide?.storeUrl;
+    return {
+      chatId,
+      text: [
+        `🤝 <b>Earn ${a.pct}% of every sale you bring.</b> Share either link; anyone who buys through it (bots, dashboard, guide) earns you ${a.pct}% of what they pay, in USDC.`,
+        `Shop bot: https://t.me/${a.botName}?start=${code}`,
+        store ? `Store page: ${store.replace(/\/?$/, "/")}?ref=${code}` : "",
+        "",
+        `Earned so far: ${usd2(earned)} (${usd2(earned - paid)} not yet sent).`,
+        payout ? `Payouts go to <code>${esc(payout)}</code> (change with /payout).` : "Tell us where to pay: <code>/payout &lt;your Base or Solana USDC address&gt;</code>",
+      ]
+        .filter((l, i, arr) => l || arr[i - 1])
+        .join("\n"),
+    };
+  }
+
+  private payoutCmd(chatId: number, addr?: string): Reply {
+    if (!addr || !(/^0x[0-9a-fA-F]{40}$/.test(addr) || /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr))) {
+      return { chatId, text: "Send <code>/payout 0x…</code> (USDC on Base) or a Solana address (USDC on Solana)." };
+    }
+    this.d.book.setPayout(chatId, addr);
+    return { chatId, text: `✅ Commissions will be sent to <code>${esc(addr)}</code>.` };
+  }
+
+  /**
+   * After a referred order is paid: record the affiliate's commission and tell them. Self-referrals
+   * earn nothing. Returns the message for the affiliate and a line for the seller's sale alert.
+   */
+  commission(o: Order, now = Date.now()): { replies: Reply[]; ownerNote?: string } {
+    const a = this.d.affiliate;
+    const m = /^u-([0-9a-z]{1,13})$/.exec(o.ref ?? "");
+    if (!a || !m || o.status !== "paid") return { replies: [] };
+    const referrer = parseInt(m[1]!, 36);
+    if (!Number.isSafeInteger(referrer) || referrer === chatOf(o)) return { replies: [] };
+    const amount = Math.round(o.amountMicro * a.pct) / 1e8; // micro-USDC × pct% → USD
+    const value = Math.round(amount * 100) / 100;
+    if (this.d.book.commissions().some((c) => c.order === o.id)) return { replies: [] };
+    this.d.book.addCommission({ order: o.id, referrer, usd: value, at: now });
+    const payout = this.d.book.payoutOf(referrer);
+    const name = this.product(o.product)?.name ?? o.product;
+    return {
+      replies: [
+        {
+          chatId: referrer,
+          text: `💰 You earned <b>${usd2(value)}</b>: someone bought ${esc(name)} through your link. ${payout ? `It'll be sent to <code>${esc(payout)}</code>.` : "Send <code>/payout &lt;address&gt;</code> so we know where to pay you."}`,
+        },
+      ],
+      ownerNote: `🤝 affiliate ${o.ref}: owe ${usd2(value)}${payout ? ` → ${payout}` : " (no payout address yet)"}`,
+    };
+  }
+
   /** Seller's view: revenue against the goal, and orders started → paid by product and by store-link channel. */
   stats(now = Date.now()): string {
     const all = this.d.book.all();
@@ -325,10 +389,22 @@ export class Shop {
       `📊 <b>${usd(Math.round(total * 100) / 100)} of ${usd(goal)}</b> (${Math.floor((total / goal) * 100)}%) · ${paid.length} sale${paid.length === 1 ? "" : "s"}`,
       `Last 7 days: ${usd(Math.round(usdOf(week) * 100) / 100)} from ${week.length}`,
       all.length ? "" : "No orders yet.",
+      ...this.owedLines(),
       ...(all.length ? ["<b>By product</b> (paid/started)", ...table((o) => this.product(o.product)?.name ?? o.product), "", "<b>By channel</b> (store link ?ref=)", ...table((o) => o.ref ?? "direct")] : []),
     ]
       .filter((l, i, a) => l || a[i - 1])
       .join("\n");
+  }
+
+  private owedLines(): string[] {
+    const owed = new Map<number, number>();
+    for (const c of this.d.book.commissions()) if (!c.paidAt) owed.set(c.referrer, (owed.get(c.referrer) ?? 0) + c.usd);
+    if (!owed.size) return [];
+    return [
+      "<b>Affiliates to pay</b> (then /paidout &lt;code&gt;)",
+      ...[...owed.entries()].map(([r, v]) => `${this.affCode(r)}: ${usd2(v)} → ${this.d.book.payoutOf(r) ? `<code>${esc(this.d.book.payoutOf(r)!)}</code>` : "no address yet"}`),
+      "",
+    ];
   }
 
   handle(u: Update): { replies: Reply[]; answerCallback?: string } {
@@ -340,7 +416,7 @@ export class Shop {
       if (kind === "p" && p) return { replies: [this.pickChain(chatId, p)], answerCallback: q.id };
       if (kind === "c" && p && (chain === "solana" || chain === "base") && this.d.receivers[chain]) {
         try {
-          const o = this.d.book.create(p.id, p.priceUsd, chain, tgContact(chatId, q.from.username), cleanRef(rawRef));
+          const o = this.d.book.create(p.id, p.priceUsd, chain, tgContact(chatId, q.from.username), cleanRef(rawRef) ?? this.d.book.referrerOf(chatId));
           return { replies: [this.payment(chatId, o, p)], answerCallback: q.id };
         } catch (e) {
           return { replies: [{ chatId, text: `⚠️ ${esc(e instanceof Error ? e.message : String(e))}` }], answerCallback: q.id };
@@ -355,6 +431,18 @@ export class Shop {
     if (cmd === "/status") return { replies: this.status(chatId) };
     if ((cmd === "/trial" || (cmd === "/start" && arg === "trial")) && this.trialOn()) return { replies: [this.trialCmd(chatId, m.from?.username)] };
     if ((cmd === "/watch" || cmd === "/unwatch") && this.d.watches) return { replies: [this.watchCmd(chatId, arg, cmd === "/unwatch")] };
+    if (this.d.affiliate) {
+      if (cmd === "/invite") return { replies: [this.inviteCmd(chatId)] };
+      if (cmd === "/payout") return { replies: [this.payoutCmd(chatId, arg)] };
+      if (cmd === "/start" && arg && /^u-[0-9a-z]{1,13}$/.test(arg)) {
+        if (arg !== this.affCode(chatId)) this.d.book.setReferrer(chatId, arg);
+        return { replies: [this.menu(chatId)] };
+      }
+      if (cmd === "/paidout" && this.d.ownerId !== undefined && chatId === this.d.ownerId && arg && /^u-[0-9a-z]{1,13}$/.test(arg)) {
+        const total = this.d.book.markPaid(parseInt(arg.slice(2), 36), Date.now());
+        return { replies: [{ chatId, text: total ? `✅ Marked ${usd2(total)} to ${arg} as paid.` : `Nothing owed to ${arg}.` }] };
+      }
+    }
     if (cmd === "/stats" && this.d.ownerId !== undefined && chatId === this.d.ownerId) return { replies: [{ chatId, text: this.stats() }] };
     if (cmd === "/start" && arg?.startsWith("buy_")) {
       // buy_<product> or buy_<product>__<ref> (the store page passes its ?ref= through)

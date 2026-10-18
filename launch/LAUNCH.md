@@ -106,6 +106,13 @@ Not financial advice. LP can lose money. You hold your keys.
 
 **Track what converts:** add `?ref=x`, `?ref=tg`, `?ref=reddit` to the store link. Send `/stats` to the shop bot from your own Telegram account (`TG_OWNER_ID`). It shows revenue against the $2,000 goal and orders paid/started by product and by channel. After week 1, double down on the channel that sold.
 
+## Affiliates
+
+Anyone can send `/invite` to the shop bot and earn 20% of the sales they bring, in USDC. The rate is set by the `REF_PCT` repo variable.
+- Offer it in every group where you post. The admins and regulars of LP groups are the best affiliates.
+- Pay commissions within a week, and post that you did. Being seen paying is what makes the next affiliate join.
+- `/stats` shows what's owed. Send `/paidout u-…` once you've paid.
+
 ## Bounties (revenue stream 4)
 
 See [BOUNTIES.md](BOUNTIES.md). It covers where to look, which package answers which brief, an application template, and pricing.
