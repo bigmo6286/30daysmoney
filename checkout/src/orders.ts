@@ -46,9 +46,24 @@ export interface Trial {
   reminded?: number;
 }
 
+/** a referral commission owed to an affiliate (paid out by hand in USDC) */
+export interface Commission {
+  order: string;
+  /** the affiliate's Telegram chat */
+  referrer: number;
+  usd: number;
+  at: number;
+  paidAt?: number;
+}
+
 interface File {
   orders: Order[];
   trials?: Trial[];
+  /** chat id → affiliate code that brought it (first one wins) */
+  referredBy?: Record<string, string>;
+  commissions?: Commission[];
+  /** affiliate chat id → where they want commissions sent */
+  payoutTo?: Record<string, string>;
   /** every txid ever matched, so a re-scanned transfer can't pay twice */
   seen: string[];
 }
@@ -138,6 +153,50 @@ export class OrderBook {
 
   addTrial(t: Trial) {
     (this.data.trials ??= []).push(t);
+    this.save();
+  }
+
+  referrerOf(chatId: number): string | undefined {
+    return this.data.referredBy?.[String(chatId)];
+  }
+
+  /** Remember who referred this chat; the first referral sticks. Returns whether it was recorded. */
+  setReferrer(chatId: number, code: string): boolean {
+    const m = (this.data.referredBy ??= {});
+    if (m[String(chatId)]) return false;
+    m[String(chatId)] = code;
+    this.save();
+    return true;
+  }
+
+  commissions(): Commission[] {
+    return this.data.commissions ?? [];
+  }
+
+  addCommission(c: Commission) {
+    const list = (this.data.commissions ??= []);
+    if (list.some((x) => x.order === c.order)) return;
+    list.push(c);
+    this.save();
+  }
+
+  /** Mark everything owed to an affiliate as paid. Returns the total. */
+  markPaid(referrer: number, at: number): number {
+    let total = 0;
+    for (const c of this.commissions()) if (c.referrer === referrer && !c.paidAt) {
+      c.paidAt = at;
+      total += c.usd;
+    }
+    if (total) this.save();
+    return total;
+  }
+
+  payoutOf(chatId: number): string | undefined {
+    return this.data.payoutTo?.[String(chatId)];
+  }
+
+  setPayout(chatId: number, address: string) {
+    (this.data.payoutTo ??= {})[String(chatId)] = address;
     this.save();
   }
 

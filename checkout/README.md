@@ -122,6 +122,13 @@ The PnL dashboard's products are `pnl-pro` ($15 for 30 days) and `pnl-lifetime` 
 - The first read only records the ranges. A wallet whose read fails on any chain is skipped for that run.
 - When a chat's Pro key runs out, its watches are removed with one message.
 
+**Affiliates:** anyone can send `/invite` to the shop bot. They get two links that carry their code (`u-…`): a shop-bot link and a store link.
+- A chat that arrives through either link stays tagged, even if it buys later from the menu.
+- When a tagged order is paid, the shop records a commission of `REF_PCT`% (repo variable, default 20, max 50). Self-referrals don't count.
+- The affiliate gets a DM, and the owner's sale alert shows what's owed and where to send it.
+- Affiliates set where to be paid with `/payout <Base or Solana address>`.
+- The owner sees everything owed in `/stats`, pays it by hand in USDC, then sends `/paidout u-…`.
+
 **Free trial:** `/trial` in the shop bot, or the store's `t.me/<bot>?start=trial` link, gives one 7-day Dashboard Pro key per Telegram chat. Asking again re-sends the same key.
 - Trials are not orders, so they never count as sales in `/stats` or the ledger.
 - The usual reminder arrives 3 days before the end.
