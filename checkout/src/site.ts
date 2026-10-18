@@ -13,9 +13,17 @@ export interface StoreOptions {
   checkEveryMin: number;
   /** seller contact, shown in the FAQ and footer */
   contact?: string;
+  /** the Pages root, for absolute link-preview URLs; derived from repoUrl when not given */
+  storeUrl?: string;
   /** the shop's receiving addresses, so a buyer can check the one the bot gives them */
   receivers?: { base?: string; solana?: string };
 }
+
+/** https://github.com/<owner>/<repo> → https://<owner>.github.io/<repo>/ (relative when it isn't GitHub) */
+export const pagesUrl = (repoUrl: string) => {
+  const m = /github\.com\/([^/]+)\/([^/#?]+)/.exec(repoUrl);
+  return m ? `https://${m[1]!.toLowerCase()}.github.io/${m[2]!.replace(/\.git$/, "")}/` : "./";
+};
 
 const json = (v: unknown) => JSON.stringify(v).replace(/</g, "\\u003c");
 
@@ -30,7 +38,8 @@ export function renderStore(tpl: string, o: StoreOptions): string {
     .replaceAll("{{SITE_JSON}}", () => site)
     .replaceAll("{{SHOP_BOT}}", () => o.shopBot)
     .replaceAll("{{REPO_URL}}", () => o.repoUrl.replace(/"/g, ""))
-    .replaceAll("{{CHECK_EVERY_MIN}}", () => String(o.checkEveryMin));
+    .replaceAll("{{CHECK_EVERY_MIN}}", () => String(o.checkEveryMin))
+    .replaceAll("{{STORE_URL}}", () => (o.storeUrl || pagesUrl(o.repoUrl)).replace(/"/g, "").replace(/\/?$/, "/"));
 }
 
 if (process.argv[1] && /site\.[jt]s$/.test(process.argv[1])) {
@@ -42,6 +51,7 @@ if (process.argv[1] && /site\.[jt]s$/.test(process.argv[1])) {
     repoUrl: process.env.REPO_URL || "https://github.com/bigmo6286/30daysmoney",
     checkEveryMin: Number(process.env.CHECK_EVERY_MIN || 15),
     contact: (process.env.CONTACT || "").trim(),
+    storeUrl: (process.env.STORE_URL || "").trim() || undefined,
     receivers: { base: (process.env.BASE_RECEIVER || "").trim(), solana: (process.env.SOL_RECEIVER || "").trim() },
   });
   fs.mkdirSync(out, { recursive: true });
@@ -49,6 +59,7 @@ if (process.argv[1] && /site\.[jt]s$/.test(process.argv[1])) {
   // paid guides: the reader page and the encrypted guides (never the plain text)
   const pub = new URL("../public/", import.meta.url).pathname;
   fs.copyFileSync(path.join(pub, "guide.html"), path.join(out, "guide.html"));
+  fs.copyFileSync(path.join(pub, "og.png"), path.join(out, "og.png"));
   const guides = path.join(pub, "guides");
   if (fs.existsSync(guides)) {
     fs.mkdirSync(path.join(out, "guides"), { recursive: true });

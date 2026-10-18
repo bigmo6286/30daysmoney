@@ -58,7 +58,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: checkout/package-lock.json
+          cache-dependency-path: |
+            checkout/package-lock.json
+            pnl-dashboard/package-lock.json
       - run: npm ci
       - uses: actions/cache/restore@v4
         with:
@@ -80,6 +82,18 @@ jobs:
           CONTACT: ${{ vars.CONTACT }}
           CHECK_EVERY_MIN: "5"
           GUIDE_KEY: ${{ secrets.GUIDE_KEY }}
+          STORE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+      # range alerts for Dashboard Pro (pnl-dashboard reads the watch list the shop bot keeps);
+      # never blocks saving the state
+      - if: always() && steps.unpack.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 4
+        working-directory: pnl-dashboard
+        run: npm ci --no-audit --no-fund && npm run -s alerts
+        env:
+          DATA_DIR: ../checkout/data
+          SHOP_TG_TOKEN: ${{ secrets.SHOP_TG_TOKEN }}
+          ALCHEMY_KEY: ${{ secrets.ALCHEMY_KEY }}
           STORE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
       # save even if the tick failed halfway (it records progress as it goes), but never after a
       # failed unpack: that would replace the real orders with an empty book

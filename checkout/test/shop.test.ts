@@ -7,6 +7,7 @@ import { DEFAULT_PRODUCTS } from "../src/config";
 import { chatOf, Shop, tgContact, type Update } from "../src/shop";
 import { open, packDir, seal, stateKey, unpackDir } from "../src/statebox";
 import { renderStore } from "../src/site";
+import { Watches } from "../src/watches";
 import { generateKeys, issue, issueFor, payloadFor, readPayload, verify } from "../src/license";
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "shop-"));
@@ -118,6 +119,8 @@ describe("store page", () => {
     expect(withSite).toContain(BASE);
     expect(withSite).not.toContain("</script>@x");
     expect(withSite).toContain('"days":30');
+    // link previews: absolute image URL on the Pages root
+    expect(renderStore(tpl, { products: DEFAULT_PRODUCTS, shopBot: "my_shop_bot", repoUrl: "https://github.com/BigMo/shop", checkEveryMin: 5 })).toContain('content="https://bigmo.github.io/shop/og.png"');
   });
 });
 
@@ -243,7 +246,7 @@ describe("subscriptions", () => {
     const [a, b] = book.all();
     for (const o of [a!, b!]) book.match({ chain: "base", txid: `0x${o.id}`, amountMicro: o.amountMicro, from: "0xf", at: Date.now() });
     const text = s.handle(msg("/stats", 1)).replies[0]!.text;
-    expect(text).toMatch(/\$64\.\d+ of \$2000<\/b> \(3%\) · 2 sales/);
+    expect(text).toMatch(/\$64(\.\d+)? of \$2000<\/b> \(3%\) · 2 sales/); // the unique-amount cents may round to $64
     expect(text).toContain("LP Bot Pro: 1/1 paid");
     expect(text).toContain("LP PnL Dashboard Pro (30 days): 1/2 paid");
     expect(text).toMatch(/x: 2\/2 paid/);
@@ -288,5 +291,50 @@ describe("subscriptions", () => {
     const s = new Shop({ book, products: DEFAULT_PRODUCTS.filter((p) => p.id !== "pnl-pro"), receivers: { base: BASE }, contact: "", checkEveryMin: 5, trial: { product: "pnl-pro", days: 7, issue: () => "x" } });
     expect(s.handle(msg("/trial", 31)).replies[0]!.text).not.toContain("trial (");
     expect(book.trials()).toHaveLength(0);
+  });
+
+  it("/watch: Pro only (trial counts), EVM addresses, max 5, /unwatch; lapsed Pro prunes with one message", () => {
+    const k = generateKeys();
+    const dir = tmp();
+    const book = new OrderBook(dir);
+    const watches = new Watches(dir);
+    const trial = { product: "pnl-pro", days: 7, issue: (chatId: number, contact: string, days: number) => issue(payloadFor({ id: `trial-${chatId}`, product: "pnl-pro", contact }, days), k.privateKey) };
+    const s = new Shop({ book, products: DEFAULT_PRODUCTS, receivers: { base: BASE }, contact: "", checkEveryMin: 5, trial, watches });
+    const W = "0xE5a3c204D05677F40BE079d1A596f068a2c6c258";
+    expect(s.handle(msg(`/watch ${W}`, 40)).replies[0]!.text).toContain("Dashboard Pro feature");
+    expect(watches.all()).toHaveLength(0);
+    s.handle(msg("/trial", 40));
+    expect(s.handle(msg("/watch", 40)).replies[0]!.text).toContain("Send <code>/watch 0x…</code>");
+    expect(s.handle(msg(`/watch ${W}`, 40)).replies[0]!.text).toContain("Watching <code>0xe5a3");
+    expect(s.handle(msg(`/watch ${W.toLowerCase()}`, 40)).replies[0]!.text).toContain("Already");
+    expect(s.handle(msg("/watch 48wB1SzMa5mMQgjvpFWiM28myDnu7u1xTLRGgZcmAHk1", 40)).replies[0]!.text).toContain("isn't an EVM address");
+    for (let i = 1; i <= 4; i++) s.handle(msg(`/watch 0x${String(i).repeat(40)}`, 40));
+    expect(s.handle(msg(`/watch 0x${"5".repeat(40)}`, 40)).replies[0]!.text).toContain("the most");
+    expect(new Watches(dir).of(40)).toHaveLength(5); // persisted
+    expect(s.handle(msg(`/unwatch 0x${"1".repeat(40)}`, 40)).replies[0]!.text).toContain("Stopped watching");
+    expect(watches.of(40)).toHaveLength(4);
+    // still Pro: nothing pruned; after the trial ends: all removed, one message
+    expect(s.pruneWatches()).toEqual([]);
+    const pruned = s.pruneWatches(Date.now() + 8 * DAY);
+    expect(pruned).toHaveLength(1);
+    expect(pruned[0]).toMatchObject({ chatId: 40, buttons: [[{ data: "p:pnl-pro" }]] });
+    expect(watches.all()).toHaveLength(0);
+  });
+
+  it("/watch: a bot license counts as Pro, a guide purchase doesn't", () => {
+    const k = generateKeys();
+    const dir = tmp();
+    const book = new OrderBook(dir);
+    const s = new Shop({ book, products: DEFAULT_PRODUCTS, receivers: { base: BASE }, contact: "", checkEveryMin: 5, watches: new Watches(dir) });
+    const buy = (product: string, chat: number) => {
+      s.handle(tap(`c:${product}:base`, chat));
+      const o = book.all().at(-1)!;
+      book.match({ chain: "base", txid: `0x${o.id}`, amountMicro: o.amountMicro, from: "0xf", at: Date.now() });
+      book.setLicense(o.id, issueFor(book.get(o.id)!, DEFAULT_PRODUCTS, book.all(), k.privateKey));
+    };
+    buy("lp-bot", 50);
+    buy("flash-guide", 51);
+    expect(s.proUntil(50)).toBe(Infinity);
+    expect(s.proUntil(51)).toBeNull();
   });
 });

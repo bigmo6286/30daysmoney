@@ -23,7 +23,10 @@ await build({
   define: { "process.env.NODE_ENV": '"production"', global: "globalThis" },
   logLevel: "warning",
 });
-fs.copyFileSync(path.join(here, "index.html"), path.join(out, "index.html"));
+// link previews need absolute URLs: STORE_URL is the Pages root (pages.yml sets it); locally, relative
+const store = (process.env.STORE_URL || "../").replace(/\/?$/, "/");
+fs.writeFileSync(path.join(out, "index.html"), fs.readFileSync(path.join(here, "index.html"), "utf8").replaceAll("{{STORE_URL}}", () => store));
+fs.copyFileSync(path.join(here, "og.png"), path.join(out, "og.png"));
 const size = (f) => fs.statSync(f).size;
 const files = fs.readdirSync(out, { recursive: true }).filter((f) => f.endsWith(".js"));
 console.log(`wrote ${out}: ${files.map((f) => `${f} ${(size(path.join(out, f)) / 1024).toFixed(0)}KB`).join(", ")}`);

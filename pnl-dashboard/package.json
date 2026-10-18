@@ -12,6 +12,7 @@
     "start": "node --env-file-if-exists=.env --import tsx src/index.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
     "build:web": "node web/build.mjs",
+    "alerts": "node --env-file-if-exists=.env --import tsx src/alerts.ts",
     "test": "vitest run test/unit",
     "test:integration": "vitest run test/integration"
   },
