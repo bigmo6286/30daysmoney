@@ -232,4 +232,61 @@ describe("subscriptions", () => {
     expect(s.reminders(t0 + 50 * DAY)).toEqual([]);
     expect(s.reminders(t0 + 58 * DAY)).toHaveLength(1);
   });
+
+  it("/stats: owner only; revenue against the goal, paid/started by product and by channel", () => {
+    const book = new OrderBook(tmp());
+    const s = new Shop({ book, products: DEFAULT_PRODUCTS, receivers: { base: BASE }, contact: "@seller", checkEveryMin: 5, ownerId: 1 });
+    expect(s.handle(msg("/stats", 1)).replies[0]!.text).toContain("$0 of $2000");
+    s.handle(tap("c:lp-bot:base:x", 20));
+    s.handle(tap("c:pnl-pro:base:x", 21));
+    s.handle(tap("c:pnl-pro:base", 22));
+    const [a, b] = book.all();
+    for (const o of [a!, b!]) book.match({ chain: "base", txid: `0x${o.id}`, amountMicro: o.amountMicro, from: "0xf", at: Date.now() });
+    const text = s.handle(msg("/stats", 1)).replies[0]!.text;
+    expect(text).toMatch(/\$64\.\d+ of \$2000<\/b> \(3%\) · 2 sales/);
+    expect(text).toContain("LP Bot Pro: 1/1 paid");
+    expect(text).toContain("LP PnL Dashboard Pro (30 days): 1/2 paid");
+    expect(text).toMatch(/x: 2\/2 paid/);
+    expect(text).toMatch(/direct: 0\/1 paid/);
+    // anyone else just gets the shop menu
+    expect(s.handle(msg("/stats", 99)).replies[0]!.text).not.toContain("of $2000");
+  });
+
+  it("/trial: one 7-day Dashboard Pro key per chat, re-sent on asking again, reminded before it ends, and a purchase adds on", () => {
+    const k = generateKeys();
+    const book = new OrderBook(tmp());
+    const trial = { product: "pnl-pro", days: 7, issue: (chatId: number, contact: string, days: number) => issue(payloadFor({ id: `trial-${chatId}`, product: "pnl-pro", contact }, days), k.privateKey) };
+    const s = new Shop({ book, products: DEFAULT_PRODUCTS, receivers: { base: BASE }, contact: "@seller", checkEveryMin: 5, storeUrl: "https://x.github.io/repo", trial });
+    expect(s.handle(msg("/start", 30)).replies[0]!.text).toContain("/trial");
+    const first = s.handle(msg("/trial", 30)).replies[0]!.text;
+    expect(first).toContain("free <b>LP PnL Dashboard Pro</b> trial (7 days)");
+    expect(first).toContain("https://x.github.io/repo/dashboard/");
+    const key = book.trials()[0]!.license;
+    expect(verify(key, k.publicKey)).toMatchObject({ product: "pnl-pro", order: "trial-30" });
+    expect(readPayload(key)!.expires! - Date.now()).toBeGreaterThan(6.9 * DAY);
+    // again (also via the store's t.me/<bot>?start=trial link): same key, no second trial
+    const again = s.handle(msg("/start trial", 30)).replies[0]!;
+    expect(again.text).toContain("one per account");
+    expect(again.text).toContain(key);
+    expect(book.trials()).toHaveLength(1);
+    expect(again.buttons![0]![0]!.data).toBe("p:pnl-pro");
+    // not counted as a sale
+    expect(book.all()).toHaveLength(0);
+    // reminded 3 days before the trial ends
+    expect(s.reminders(Date.now() + 5 * DAY)[0]).toMatchObject({ chatId: 30, buttons: [[{ data: "p:pnl-pro" }]] });
+    // buying during the trial adds 30 days on top of what's left
+    s.handle(tap("c:pnl-pro:base", 30));
+    const o = book.all()[0]!;
+    const bought = issueFor(o, DEFAULT_PRODUCTS, [...book.all(), ...book.trials()], k.privateKey);
+    expect(readPayload(bought)!.expires).toBe(readPayload(key)!.expires! + 30 * DAY);
+    // and the product page says it's per 30 days, not one-time
+    expect(s.handle(tap("p:pnl-pro", 30)).replies[0]!.text).toContain("per 30 days");
+  });
+
+  it("no /trial when the shop has no trial or doesn't sell the product", () => {
+    const book = new OrderBook(tmp());
+    const s = new Shop({ book, products: DEFAULT_PRODUCTS.filter((p) => p.id !== "pnl-pro"), receivers: { base: BASE }, contact: "", checkEveryMin: 5, trial: { product: "pnl-pro", days: 7, issue: () => "x" } });
+    expect(s.handle(msg("/trial", 31)).replies[0]!.text).not.toContain("trial (");
+    expect(book.trials()).toHaveLength(0);
+  });
 });

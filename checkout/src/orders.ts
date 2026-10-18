@@ -36,8 +36,19 @@ export interface Order {
   reminded?: number;
 }
 
+/** a free trial key handed out by the shop bot (one per Telegram chat); not an order, never counted as a sale */
+export interface Trial {
+  id: string;
+  product: string;
+  contact: string;
+  at: number;
+  license: string;
+  reminded?: number;
+}
+
 interface File {
   orders: Order[];
+  trials?: Trial[];
   /** every txid ever matched, so a re-scanned transfer can't pay twice */
   seen: string[];
 }
@@ -121,8 +132,17 @@ export class OrderBook {
     }
   }
 
+  trials(): Trial[] {
+    return this.data.trials ?? [];
+  }
+
+  addTrial(t: Trial) {
+    (this.data.trials ??= []).push(t);
+    this.save();
+  }
+
   setReminded(id: string, at: number) {
-    const o = this.get(id);
+    const o = this.get(id) ?? this.trials().find((t) => t.id === id);
     if (o) {
       o.reminded = at;
       this.save();

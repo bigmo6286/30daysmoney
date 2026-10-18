@@ -44,7 +44,7 @@ Chains: Robinhood Chain, Base, Ethereum, or any chain with Morpho Blue + Uniswap
 
 - Most two-pool gaps on liquid pairs are closed by others within a block. This is a tool, not a money printer: run it on long-tail pairs, and expect most scans to report nothing.
 - Public mempools: a visible profitable transaction can be copied or sandwiched. The revert floor protects your principal, not your gas. Use a private RPC where your chain has one.
-- **Not rebuilt yet:** RobinArb's RobinFun bonding-curve ↔ Uniswap v4 route.
+- **Not rebuilt:** RobinArb's RobinFun bonding-curve ↔ Uniswap v4 route. RobinFun publishes no contract addresses or source, and its tokens graduate into a burned LP. That suggests the curve and the pool don't trade at the same time, so this is parked until the contracts can be checked.
 
 ## Solana: Kamino flash loans + Jupiter
 
