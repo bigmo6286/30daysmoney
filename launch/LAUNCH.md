@@ -107,4 +107,4 @@ Not financial advice. LP can lose money. You hold your keys.
 
 ## Bounties (revenue stream 4)
 
-Search Superteam Earn and Gitcoin for "Telegram bot", "LP", "DLMM", "Uniswap v4" and "Solana scripts". The repo is the portfolio: link the specific package that matches the bounty.
+See [BOUNTIES.md](BOUNTIES.md). It covers where to look, which package answers which brief, an application template, and pricing.
