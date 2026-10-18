@@ -118,6 +118,8 @@ describe("store page", () => {
     expect(withSite).toContain(BASE);
     expect(withSite).not.toContain("</script>@x");
     expect(withSite).toContain('"days":30');
+    // link previews: absolute image URL on the Pages root
+    expect(renderStore(tpl, { products: DEFAULT_PRODUCTS, shopBot: "my_shop_bot", repoUrl: "https://github.com/BigMo/shop", checkEveryMin: 5 })).toContain('content="https://bigmo.github.io/shop/og.png"');
   });
 });
 
