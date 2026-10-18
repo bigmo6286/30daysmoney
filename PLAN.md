@@ -92,5 +92,11 @@ Week 1: first sale · Week 2: $500 · Week 3: $1,200 · Week 4: $2,000
 - The payment message now names one destination. A test buyer read the USDC token contract as a second address.
 - **Share card**: one click on the dashboard makes a 1200×630 image of your positions, with no address and amounts optional. It links back to the free dashboard (`?ref=card`), so each card posted is an ad.
 - The launch kit now leads with the free dashboard.
+- `dlmm-agent`: `/preset safe|balanced|aggressive`. Presets never touch sizing, and they keep the safety floors.
+- `launch/BOUNTIES.md`: where to look, which package answers which brief, an application template, and pricing. The bounty sites can't be reached from the build environment, so the owner applies.
+- **flash-kit on Solana**: Kamino flash loan + Jupiter round trip, with no SDK.
+  - Checked against mainnet by simulation: the fee is 0.001%, and a strategy that comes back short fails as a whole.
+  - Some private market makers refuse to trade inside a flash transaction, so the tool routes around them.
+  - On Solana a wallet holding the loan token would quietly pay for a losing route, so `--exec` refuses to run while the wallet holds any.
 
 **Still needed (owner):** a burner wallet with a little ETH on Robinhood Chain for the first live (non-paper) run; a second Telegram bot for the shop, and the GitHub secrets/variables in checkout/README.md#serverless-shop (USDC on Base goes to 0x51F0…67A7). A Telegram bot (@thirtydaysmoney_bot) and the RPC are in place.

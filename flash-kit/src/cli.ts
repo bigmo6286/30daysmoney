@@ -9,6 +9,10 @@
  *   flash-kit arb       --chain base --executor 0x… --mid 0xTOKEN [--min-profit 0.001] [--slippage-bps 50] [--exec --yes] [--every 30]
  *   flash-kit allow-router --chain base --executor 0x… --router 0x… [--off] --yes
  *
+ * Solana (Kamino flash loans + Jupiter):
+ *   flash-kit sol-liquidity [--token USDC|SOL]
+ *   flash-kit sol-arb --mid <mint> [--token USDC] [--amount 1000] [--min-profit 0.5] [--every 30] [--exec --yes]
+ *
  * The loan token is WETH unless --token is given. Keys come only from PRIVATE_KEY in the
  * environment / .env, never from arguments. Nothing is sent without --yes, and `arb` only
  * sends after a successful simulation.
@@ -88,13 +92,14 @@ function showQuote(q: Quote, loanSym: string, dec: number) {
 async function main(argv: string[], log = console.log) {
   const { cmd, opts } = parseArgs(argv);
   if (cmd === "help" || opts.help) {
-    log((await import("node:fs")).readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1, 16).map((l) => l.replace(/^ \* ?/, "")).join("\n"));
+    log((await import("node:fs")).readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1, 21).map((l) => l.replace(/^ \* ?/, "")).join("\n"));
     return;
   }
   if (cmd === "chains") {
     for (const [k, c] of Object.entries(CHAINS)) log(`${k.padEnd(10)} ${c.name} (${c.chainId}) · Morpho ${c.morpho} · router ${c.swapRouter02}`);
     return;
   }
+  if (cmd.startsWith("sol-")) return (await import("./sol/cli")).solMain(cmd, opts, log);
   const chain = chainFrom(opts);
   const provider = new ethers.JsonRpcProvider(chain.rpcUrl, chain.chainId, { staticNetwork: true });
   const loan = opts.token ? addr(opts.token, "--token") : ethers.getAddress(chain.weth);

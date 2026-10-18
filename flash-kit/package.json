@@ -1,7 +1,7 @@
 {
   "name": "flash-kit",
   "version": "0.1.0",
-  "description": "Flash-loan arbitrage toolkit for EVM chains: Morpho flash liquidity, two-pool Uniswap v3 arbitrage with an on-chain profit-or-revert executor, quote → simulate → execute",
+  "description": "Flash-loan arbitrage toolkit: Morpho + Uniswap v3 on EVM chains with an on-chain profit-or-revert executor, and Kamino + Jupiter on Solana; quote → simulate → execute",
   "type": "module",
   "license": "UNLICENSED",
   "private": true,
@@ -14,9 +14,12 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run test/unit",
     "test:integration": "vitest run test/integration",
-    "test:fork": "vitest run test/fork"
+    "test:fork": "vitest run test/fork",
+    "test:live": "vitest run test/live"
   },
   "dependencies": {
+    "@solana/spl-token": "^0.4.13",
+    "@solana/web3.js": "^1.98.4",
     "ethers": "^6.17.0",
     "tsx": "^4.23.15",
     "zod": "^3.25.76"

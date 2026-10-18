@@ -44,7 +44,36 @@ Chains: Robinhood Chain, Base, Ethereum, or any chain with Morpho Blue + Uniswap
 
 - Most two-pool gaps on liquid pairs are closed by others within a block. This is a tool, not a money printer: run it on long-tail pairs, and expect most scans to report nothing.
 - Public mempools: a visible profitable transaction can be copied or sandwiched. The revert floor protects your principal, not your gas. Use a private RPC where your chain has one.
-- **Not rebuilt yet:** kamino-tools' Solana flash borrow→strategy→repay builder, and RobinArb's RobinFun bonding-curve ↔ Uniswap v4 route.
+- **Not rebuilt yet:** RobinArb's RobinFun bonding-curve ↔ Uniswap v4 route.
+
+## Solana: Kamino flash loans + Jupiter
+
+This rebuilds kamino-tools' "borrow → strategy → repay" without its SDK. The two klend instructions are built from the reserve account read on chain. A reserve is used only after checking that:
+- klend owns it;
+- it has the reserve discriminator;
+- its vaults hold its mint for the market's authority PDA.
+
+`sol-arb` borrows the loan token from Kamino's main market. It swaps into `--mid` and back through Jupiter, then repays, all in one transaction.
+
+```bash
+npm run cli -- sol-liquidity                      # 13.2M USDC available (Oct 18)
+npm run cli -- sol-liquidity --token SOL
+npm run cli -- sol-arb --mid <mint> --amount 1000                 # quote only
+SOL_ADDRESS=<your wallet> npm run cli -- sol-arb --mid <mint>     # quote + full simulation
+npm run cli -- sol-arb --mid <mint> --min-profit 0.5 --exec --yes --every 30
+```
+
+**Safety on Solana works differently from the EVM executor.** klend only checks that the loan plus its fee comes back. If the wallet already holds the loan token, a losing round trip is quietly paid from that balance.
+
+So `--exec` refuses to run while the wallet holds any of the loan token. With an empty balance, only a route that returns the loan plus the fee can complete. Anything short fails as a whole, and you lose only the transaction fee. Profit above that is checked by simulation just before sending, not on chain.
+
+**What mainnet showed (Oct 18, all simulated, nothing sent):**
+- Kamino's flash fee on the USDC reserve is 0.001%: a 10,000 USDC borrow → repay costs exactly 0.1 USDC.
+- A strategy that comes back even 1 unit short fails with "insufficient funds" at repay.
+- Jupiter's cheapest USDC ↔ SOL routes often go through private market makers, such as Kipseli and TesseraV. These refuse to trade inside a transaction like this one (`NotSupport`).
+  - `sol-arb` re-quotes without them.
+  - The route it found (BisonFi → GoonFi V2) fit in 1,085 bytes and ~310k CU.
+- A 1,000 USDC round trip through SOL quotes at about −$3, as expected on a liquid pair. Use it on long-tail tokens.
 
 ## Tests
 
@@ -52,6 +81,7 @@ Chains: Robinhood Chain, Base, Ethereum, or any chain with Morpho Blue + Uniswap
 npm run typecheck && npm test
 npm run test:integration    # needs ../lp-bot dependencies (local chain with the real Uniswap v3 contracts)
 ALCHEMY_KEY=… npm run test:fork   # Ethereum mainnet fork: the real Morpho Blue and Uniswap v3 (or FORK_URL=…)
+SOLANA_RPC_URL=… npm run test:live # Solana mainnet, simulated only: real Kamino reserves, real Jupiter routes
 ```
 
 **Mainnet fork** (`test/fork`, pinned block 26,211,400): the real Morpho Blue holds >1,000 WETH, all four WETH/USDC fee tiers exist, and a scan before any trade finds nothing profitable (the market is efficient). After a 3,000 WETH dump on the 0.3% pool, the executor flash-borrows from the real Morpho, closes the gap, pays the owner exactly the simulated profit, leaves Morpho's balance unchanged and holds no tokens or allowances, and the same route then reverts. The CLI with the stock `--chain ethereum` preset does the same end to end. Read-only live checks on the same day: Morpho can lend 26.7 WETH on Robinhood Chain (confirms the address taken from the reference toolkit), 82k on Base, 13.7k on Ethereum.
