@@ -36,7 +36,18 @@ Free: everything you drive yourself, plus paper mode, range alerts, stop loss an
 | `/open <pool\|mint> [SOL]` | gates, then a confirm button |
 | `/close <id>` · `/closeall` | close (with confirm) |
 | `/auto` · `/auto on\|off` · `/auto block <mint>` | autopilot status and switches |
+| `/preset` · `/preset safe\|balanced\|aggressive` | pick a risk level in one command (shows exactly what changed) |
 | `/settings` · `/set <key> <value>` | every threshold is live-editable |
+
+### Presets
+
+| preset | for | stop loss | entry filters |
+|---|---|---|---|
+| `safe` | older, bigger, widely held tokens | −10% | TVL ≥ $50k, mcap ≥ $1M, ≥ 2,000 holders, ≥ 24h old, Jev rug ≤ 25% |
+| `balanced` | the defaults | −15% | as in the table below |
+| `aggressive` | young, small, high-fee pools | −25% | TVL ≥ $5k, mcap ≥ $75k, ≥ 250 holders, ≥ 30 min old, fee/TVL ≥ 0.8% |
+
+A preset never touches sizing (`sizeSol`, `maxOpen`, `dailySol`) or the Pro switches. Every preset keeps the stop loss on, requires a renounced mint and keeps Jev screening on. `/set` still adjusts single keys afterwards, and `/preset` then shows "custom". Presets are in the free tier.
 
 ### Key settings
 

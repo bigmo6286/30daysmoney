@@ -135,6 +135,51 @@ export function loadConfig(e: NodeJS.ProcessEnv = process.env): AppConfig {
 /** Settings only a Pro license can turn on, with how to name them to the user. */
 export const PRO_SETTINGS: Partial<Record<keyof Settings, string>> = { autoEnabled: "The autopilot", dailyReport: "The daily report" };
 
+/**
+ * Strategy presets: a bundle of range, screening and exit settings, so a new user picks a risk
+ * level instead of tuning 20 numbers. They never touch sizing (how much SOL is yours to decide),
+ * the Pro switches, or the safety floors: every preset keeps the stop loss on, mint authority
+ * renounced, and the Jev rug threshold at or below the default.
+ */
+export type PresetName = "safe" | "balanced" | "aggressive";
+type PresetKey =
+  | "downsidePct" | "strategy" | "timeframe" | "minTvlUsd" | "minVolumeUsd" | "minFeeTvlPct" | "minMcapUsd" | "minHolders" | "minOrganic"
+  | "minTokenAgeHours" | "maxTop10Pct" | "maxRoundTripLossPct" | "maxRugPct" | "maxRiskPct" | "stopLossPct" | "trailArmPct" | "trailDropPct"
+  | "oorAboveMin" | "oorBelowMin" | "minFeeTvlPctHold" | "cooldownHours";
+const DEFAULTS = SettingsSchema.parse({});
+const pick = (s: Settings, keys: PresetKey[]) => Object.fromEntries(keys.map((k) => [k, s[k]])) as Pick<Settings, PresetKey>;
+const PRESET_KEYS: PresetKey[] = ["downsidePct", "strategy", "timeframe", "minTvlUsd", "minVolumeUsd", "minFeeTvlPct", "minMcapUsd", "minHolders", "minOrganic", "minTokenAgeHours", "maxTop10Pct", "maxRoundTripLossPct", "maxRugPct", "maxRiskPct", "stopLossPct", "trailArmPct", "trailDropPct", "oorAboveMin", "oorBelowMin", "minFeeTvlPctHold", "cooldownHours"];
+
+export const PRESETS: Record<PresetName, { blurb: string; values: Pick<Settings, PresetKey> }> = {
+  safe: {
+    blurb: "older, bigger, widely held tokens; tighter stop loss; slower in and out",
+    values: {
+      ...pick(DEFAULTS, PRESET_KEYS),
+      downsidePct: 30, timeframe: "12h", minTvlUsd: 50_000, minVolumeUsd: 10_000, minFeeTvlPct: 0.3, minMcapUsd: 1_000_000, minHolders: 2_000,
+      minOrganic: 75, minTokenAgeHours: 24, maxTop10Pct: 35, maxRoundTripLossPct: 3, maxRugPct: 25, maxRiskPct: 40,
+      stopLossPct: 10, trailArmPct: 4, trailDropPct: 2, oorBelowMin: 15, cooldownHours: 12,
+    },
+  },
+  balanced: { blurb: "the defaults", values: pick(DEFAULTS, PRESET_KEYS) },
+  aggressive: {
+    blurb: "young, small, high-fee pools; wider range and stop loss; more opens, more losses",
+    values: {
+      ...pick(DEFAULTS, PRESET_KEYS),
+      downsidePct: 60, timeframe: "1h", minTvlUsd: 5_000, minVolumeUsd: 1_000, minFeeTvlPct: 0.8, minMcapUsd: 75_000, minHolders: 250,
+      minOrganic: 50, minTokenAgeHours: 0.5, maxTop10Pct: 60, maxRoundTripLossPct: 8, stopLossPct: 25, trailArmPct: 8, trailDropPct: 4,
+      oorAboveMin: 10, oorBelowMin: 45, cooldownHours: 3,
+    },
+  },
+};
+
+/** The preset the current settings match exactly, if any. */
+export function presetOf(s: Settings): PresetName | null {
+  for (const [name, p] of Object.entries(PRESETS) as [PresetName, (typeof PRESETS)[PresetName]][]) {
+    if (PRESET_KEYS.every((k) => s[k] === p.values[k])) return name;
+  }
+  return null;
+}
+
 export class SettingsStore {
   private file: string;
   private raw: Settings;
@@ -167,5 +212,15 @@ export class SettingsStore {
     this.raw = next;
     writeJsonAtomic(this.file, next);
     return (next as Record<string, unknown>)[key];
+  }
+
+  /** Apply a preset. Returns the keys that changed, with old → new. */
+  applyPreset(name: string): { key: string; from: unknown; to: unknown }[] {
+    const p = PRESETS[name as PresetName];
+    if (!p) throw new Error(`unknown preset "${name}". Presets: ${Object.keys(PRESETS).join(", ")}`);
+    const changed = PRESET_KEYS.filter((k) => this.raw[k] !== p.values[k]).map((k) => ({ key: k, from: this.raw[k], to: p.values[k] }));
+    this.raw = SettingsSchema.parse({ ...this.raw, ...p.values });
+    writeJsonAtomic(this.file, this.raw);
+    return changed;
   }
 }
