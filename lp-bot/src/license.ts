@@ -9,7 +9,8 @@ import crypto from "node:crypto";
 export const LICENSE_PUBLIC_KEY = "MCowBQYDK2VwAyEAEEZ1U8Rn6pYcKEMFGobqSRMXW/NABOo4mnt9S8bVIuo=";
 export const PRODUCTS = ["lp-bot", "lp-bot-setup"];
 export const PRO_NAME = "LP Bot Pro";
-export const BUY_URL = "https://bigmo6286.github.io/30daysmoney/";
+/** the store, tagged so /stats in the shop bot shows sales that came from this bot */
+export const BUY_URL = "https://bigmo6286.github.io/30daysmoney/?ref=lpbot";
 
 export interface License {
   order: string;

@@ -47,7 +47,7 @@ Tested against the real v4 contracts on a Robinhood Chain fork (`ALCHEMY_KEY=…
 
 ## Free and Pro
 
-Free: everything you drive yourself, plus paper mode, range alerts, stop loss and take profit (safety is never paywalled). **Pro** (a `LICENSE_KEY` from [the store](https://bigmo6286.github.io/30daysmoney/)) adds the autopilot (`/auto`), auto-rebalance and the daily report. The key is checked offline against the seller's public key in `src/license.ts`; the bot never phones home. Without a key those settings read as off and `/set` refuses to turn them on.
+Free: everything you drive yourself, plus paper mode, range alerts, stop loss and take profit (safety is never paywalled). **Pro** (a `LICENSE_KEY` from [the store](https://bigmo6286.github.io/30daysmoney/?ref=github)) adds the autopilot (`/auto`), auto-rebalance and the daily report. The key is checked offline against the seller's public key in `src/license.ts`; the bot never phones home. Without a key those settings read as off and `/set` refuses to turn them on.
 
 ## Commands
 

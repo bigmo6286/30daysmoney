@@ -9,7 +9,8 @@ import crypto from "node:crypto";
 export const LICENSE_PUBLIC_KEY = "MCowBQYDK2VwAyEAEEZ1U8Rn6pYcKEMFGobqSRMXW/NABOo4mnt9S8bVIuo=";
 export const PRODUCTS = ["dlmm-agent", "dlmm-agent-setup"];
 export const PRO_NAME = "DLMM Agent Pro";
-export const BUY_URL = "https://bigmo6286.github.io/30daysmoney/";
+/** the store, tagged so /stats in the shop bot shows sales that came from this bot */
+export const BUY_URL = "https://bigmo6286.github.io/30daysmoney/?ref=dlmm";
 
 export interface License {
   order: string;
