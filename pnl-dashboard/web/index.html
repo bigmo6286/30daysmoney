@@ -77,7 +77,10 @@ dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--s
 dialog::backdrop { background: rgba(0,0,0,.45); }
 dialog form { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
 dialog label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--ink-2); }
-dialog .row { display: flex; gap: 8px; justify-content: flex-end; }
+dialog .row { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+dialog#share-dlg { width: min(680px, calc(100vw - 32px)); }
+form.share img { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); background: #0f1218; }
+label.check { flex-direction: row; align-items: center; gap: 8px; }
 footer { margin-top: 40px; font-size: 13px; color: var(--muted); max-width: 720px; }
 .muted { color: var(--muted); }
 </style>
@@ -88,6 +91,7 @@ footer { margin-top: 40px; font-size: 13px; color: var(--muted); max-width: 720p
     <div class="brand"><h1>LP PnL</h1><span class="badge" id="plan">Free</span></div>
     <div class="actions">
       <button id="refresh">Refresh</button>
+      <button id="share" disabled>Share</button>
       <button id="csv">Export CSV</button>
       <button id="open-settings">Settings</button>
     </div>
@@ -147,6 +151,20 @@ footer { margin-top: 40px; font-size: 13px; color: var(--muted); max-width: 720p
       <span class="hint">Solana's public RPC refuses browsers. A free Helius key works; it's stored only on this device.</span>
     </label>
     <div class="row"><button type="button" id="close-settings">Cancel</button><button class="primary" type="submit">Save</button></div>
+  </form>
+</dialog>
+<dialog id="share-dlg">
+  <form method="dialog" class="share">
+    <h2 style="margin:0">Share your positions</h2>
+    <img id="share-img" alt="Share card preview: your LP positions" width="1200" height="630">
+    <label class="check"><input type="checkbox" id="share-amounts"> Show amounts (values and fees)</label>
+    <p class="hint" style="margin:0">Wallet addresses are never on the card.</p>
+    <div class="row">
+      <button type="button" id="share-x">Post on X</button>
+      <button type="button" id="share-native" hidden>Share…</button>
+      <button type="button" class="primary" id="share-png">Download image</button>
+      <button type="submit">Close</button>
+    </div>
   </form>
 </dialog>
 <div id="tip" hidden></div>

@@ -6,6 +6,7 @@ import { daily, historyCsv, record, trustworthy, type Snapshot } from "../../web
 import { kindOf } from "../../web/load";
 import { amountsFor, feesOwed, unpackInfo } from "../../src/sources/univ4";
 import { summarize, type Row } from "../../src/model";
+import { cardModel } from "../../web/card";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -118,5 +119,42 @@ describe("univ4 math", () => {
     // symmetric range at price 1: half of each side's full amount, give or take rounding
     expect(Number(mid.amount0) / Number(below.amount0)).toBeCloseTo(0.5, 2);
     expect(Number(mid.amount1) / Number(above.amount1)).toBeCloseTo(0.5, 2);
+  });
+});
+
+describe("share card", () => {
+  const rows = [
+    row({ id: "a", pair: "GLD/USDG · v4", chain: "Robinhood Chain", valueNative: 10187.33, feesNative: 42.43, inRange: true }),
+    row({ id: "b", pair: "TAO/USDG 1%", chain: "Robinhood Chain", valueNative: 400.15, feesNative: 6.05, inRange: false }),
+    row({ id: "c", pair: "USDG/ETH · v4", chain: "Base", unit: "ETH", valueNative: 1.4942, feesNative: 0, inRange: true }),
+    row({ id: "d", pair: "OLD/USDG", status: "closed" }),
+  ];
+  const s = summarize(rows, [], DAY);
+
+  it("with amounts: fees headline in the first unit, value and fees per unit, chains, in-range first", () => {
+    const m = cardModel(s, true);
+    expect(m.headline).toBe("$48.48 in unclaimed fees");
+    expect(m.sub).toBe("across Robinhood Chain, Base");
+    expect(m.stats).toEqual([
+      { k: "Stablecoin pairs", v: "$10,587 · $48.48 fees" },
+      { k: "ETH pairs", v: "1.4942 ETH · 0 ETH fees" },
+      { k: "In range", v: "2 of 3" },
+    ]);
+    expect(m.pairs.map((p) => p.pair)).toEqual(["GLD/USDG · v4", "USDG/ETH · v4", "TAO/USDG 1%"]);
+    expect(m.more).toBe(0);
+  });
+
+  it("without amounts: no number but counts, and never an address", () => {
+    const m = cardModel(s, false);
+    expect(m.headline).toBe("3 LP positions, 2 in range");
+    expect(m.stats).toEqual([{ k: "In range", v: "2 of 3" }]);
+    expect(JSON.stringify(m)).not.toMatch(/\$|0x/);
+  });
+
+  it("caps the pair list and counts the rest", () => {
+    const many = summarize(Array.from({ length: 8 }, (_, i) => row({ id: String(i), pair: `P${i}/USDG` })), [], DAY);
+    const m = cardModel(many, false);
+    expect(m.pairs).toHaveLength(5);
+    expect(m.more).toBe(3);
   });
 });

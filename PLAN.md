@@ -82,4 +82,15 @@ Week 1: first sale · Week 2: $500 · Week 3: $1,200 · Week 4: $2,000
   - It uses real numbers measured on a mainnet fork: sizing curves (64 WETH earns 0.161 on a 300-WETH gap, 256 WETH loses 0.88) and gas of 0.51M–1.23M.
   - Delivered encrypted: the store page decrypts it in the browser with the key in the buyer's link. The plain text never enters the public repo.
 
+### Day 2 (2026-10-18)
+- **Revenue stream 2 is live: the PnL dashboard on Pages (`/dashboard/`).**
+  - It runs in the browser and reads straight from the chain: Uniswap v3 (Robinhood, Base, Arbitrum), v4 (Robinhood) and Meteora (with the viewer's own Solana RPC).
+  - Free: 1 wallet. Pro: 20 wallets, history charts, CSV and auto-refresh. Pro is unlocked offline by the license key.
+  - Shop products: `pnl-pro` ($15 for 30 days) and `pnl-lifetime` ($39). Any bot license also unlocks Pro, as the plan said.
+  - Renewing early adds on to the running key. The shop bot reminds the buyer 3 days before the key runs out.
+- The store page is redesigned: all products, how buying works, trust and safety, an FAQ, and the receiving addresses for buyers to check.
+- The payment message now names one destination. A test buyer read the USDC token contract as a second address.
+- **Share card**: one click on the dashboard makes a 1200×630 image of your positions, with no address and amounts optional. It links back to the free dashboard (`?ref=card`), so each card posted is an ad.
+- The launch kit now leads with the free dashboard.
+
 **Still needed (owner):** a burner wallet with a little ETH on Robinhood Chain for the first live (non-paper) run; a second Telegram bot for the shop, and the GitHub secrets/variables in checkout/README.md#serverless-shop (USDC on Base goes to 0x51F0…67A7). A Telegram bot (@thirtydaysmoney_bot) and the RPC are in place.
