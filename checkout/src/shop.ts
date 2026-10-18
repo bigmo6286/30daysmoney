@@ -10,6 +10,7 @@ import { BASE_USDC } from "./watch/base";
 import { SOL_USDC } from "./watch/solana";
 import { guideUrl } from "./guide";
 import { readPayload } from "./license";
+import { MAX_WATCHES, type Watches } from "./watches";
 
 export interface Button {
   text: string;
@@ -39,6 +40,8 @@ export interface ShopDeps {
   checkEveryMin: number;
   /** free trial: the product it unlocks, and a signer for its key (days → license); off when absent */
   trial?: { product: string; days: number; issue: (chatId: number, contact: string, days: number) => string };
+  /** range alerts (Pro): the watch list; off when absent */
+  watches?: Watches;
   /** the seller's Telegram id: only this chat gets /stats */
   ownerId?: number;
   /** revenue target shown in /stats */
@@ -61,6 +64,9 @@ const KEY_LINE: Record<NonNullable<Product["keyFor"]>, string> = {
   dashboard: "Your license key (paste it in the dashboard's Settings):",
   none: "Your order key (keep it: it's your proof of purchase):",
 };
+
+/** keys that unlock Dashboard Pro (same list as pnl-dashboard/web/license.ts) */
+const PRO_PRODUCTS = ["pnl-pro", "pnl-lifetime", "lp-bot", "lp-bot-setup", "dlmm-agent", "dlmm-agent-setup"];
 
 const CHAIN_NAME: Record<Chain, string> = { solana: "Solana", base: "Base" };
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -90,7 +96,7 @@ export class Shop {
   private menu(chatId: number): Reply {
     return {
       chatId,
-      text: `<b>30daysmoney</b>\nLP bots, the PnL dashboard and guides. Pay in USDC; your key arrives here.${this.trialOn() ? "\n/trial: Dashboard Pro free for 7 days." : ""}\nPick a product:`,
+      text: `<b>30daysmoney</b>\nLP bots, the PnL dashboard and guides. Pay in USDC; your key arrives here.${this.trialOn() ? "\n/trial: Dashboard Pro free for 7 days." : ""}${this.d.watches ? "\n/watch: Telegram alerts when an LP position leaves its range (Pro)." : ""}\nPick a product:`,
       buttons: this.d.products.map((p) => [{ text: `${p.name} · ${usd(p.priceUsd)}`, data: `p:${p.id}` }]),
     };
   }
@@ -235,6 +241,63 @@ export class Shop {
     };
   }
 
+  /** The chat's newest unexpired key that unlocks Dashboard Pro (paid, trial or any bot license), if any. */
+  proUntil(chatId: number, now = Date.now()): number | null {
+    let best: number | null = null;
+    for (const o of [...this.d.book.all().filter((x) => x.status === "paid"), ...this.d.book.trials()]) {
+      if (chatOf(o) !== chatId || !o.license || !PRO_PRODUCTS.includes(o.product)) continue;
+      const exp = readPayload(o.license)?.expires ?? Infinity;
+      if (exp > now && (best === null || exp > best)) best = exp;
+    }
+    return best;
+  }
+
+  private watchCmd(chatId: number, arg?: string, remove = false): Reply {
+    const w = this.d.watches!;
+    if (remove) {
+      const n = w.remove(chatId, arg);
+      return { chatId, text: n ? `Stopped watching ${arg && n === 1 ? `<code>${esc(arg.toLowerCase())}</code>` : `${n} wallet${n === 1 ? "" : "s"}`}.` : "Not watching that. /watch lists your wallets." };
+    }
+    if (this.proUntil(chatId) === null) {
+      return {
+        chatId,
+        text: `🔔 Range alerts are a Dashboard Pro feature: I DM you when one of your LP positions goes out of range, and when it's back.${this.trialOn() ? " Try it free with /trial." : ""}`,
+        buttons: this.product("pnl-pro") ? [[{ text: "Get Dashboard Pro", data: "p:pnl-pro" }]] : undefined,
+      };
+    }
+    if (!arg) {
+      const mine = w.of(chatId);
+      return {
+        chatId,
+        text: mine.length
+          ? ["🔔 Watching:", ...mine.map((x) => `<code>${x.address}</code>`), "", "/unwatch &lt;address&gt; to stop."].join("\n")
+          : `🔔 Send <code>/watch 0x…</code> with a wallet address (up to ${MAX_WATCHES}). I check its Uniswap v3/v4 positions on Robinhood Chain, Base and Arbitrum about every 15 minutes and DM you when one leaves or re-enters its range.`,
+      };
+    }
+    if (!/^0x[0-9a-fA-F]{40}$/.test(arg)) return { chatId, text: "That isn't an EVM address (0x + 40 hex). Solana wallets aren't supported for alerts yet." };
+    const r = w.add(chatId, arg);
+    const text =
+      r === "added"
+        ? `✅ Watching <code>${arg.toLowerCase()}</code>. The first check records the current ranges; after that you'll hear about changes.`
+        : r === "exists"
+          ? "Already watching that wallet."
+          : `You're watching ${MAX_WATCHES} wallets, the most. /unwatch one first.`;
+    return { chatId, text };
+  }
+
+  /** Watches whose chat no longer has Pro (a lapsed subscription or trial): removed, with one message each. */
+  pruneWatches(now = Date.now()): Reply[] {
+    const w = this.d.watches;
+    if (!w) return [];
+    const out: Reply[] = [];
+    for (const chatId of new Set(w.all().map((x) => x.chatId))) {
+      if (this.proUntil(chatId, now) !== null) continue;
+      w.remove(chatId);
+      out.push({ chatId, text: "🔕 Range alerts stopped: your Dashboard Pro key has run out. Renew, then send /watch again to turn them back on.", buttons: this.product("pnl-pro") ? [[{ text: "Renew Dashboard Pro", data: "p:pnl-pro" }]] : undefined });
+    }
+    return out;
+  }
+
   /** Seller's view: revenue against the goal, and orders started → paid by product and by store-link channel. */
   stats(now = Date.now()): string {
     const all = this.d.book.all();
@@ -291,6 +354,7 @@ export class Shop {
     const [cmd, arg] = m.text.trim().split(/\s+/);
     if (cmd === "/status") return { replies: this.status(chatId) };
     if ((cmd === "/trial" || (cmd === "/start" && arg === "trial")) && this.trialOn()) return { replies: [this.trialCmd(chatId, m.from?.username)] };
+    if ((cmd === "/watch" || cmd === "/unwatch") && this.d.watches) return { replies: [this.watchCmd(chatId, arg, cmd === "/unwatch")] };
     if (cmd === "/stats" && this.d.ownerId !== undefined && chatId === this.d.ownerId) return { replies: [{ chatId, text: this.stats() }] };
     if (cmd === "/start" && arg?.startsWith("buy_")) {
       // buy_<product> or buy_<product>__<ref> (the store page passes its ?ref= through)

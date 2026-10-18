@@ -12,6 +12,7 @@ import { issue, issueFor, payloadFor } from "./license";
 import { SolanaWatcher } from "./watch/solana";
 import { BaseWatcher } from "./watch/base";
 import { readJson, writeJsonAtomic } from "./store";
+import { Watches } from "./watches";
 import { sellable, Shop, type Button, type Reply, type Update } from "./shop";
 import { logger } from "./log";
 
@@ -54,6 +55,7 @@ async function main() {
   const book = new OrderBook(cfg.dataDir, cfg.orderTtlMin * 60_000);
   const receivers = { ...(cfg.solReceiver ? { solana: cfg.solReceiver } : {}), ...(cfg.baseReceiver ? { base: cfg.baseReceiver } : {}) };
   const shop = new Shop({ book, products, receivers, contact: cfg.contact, checkEveryMin, guide, storeUrl: storeUrl || undefined,
+    watches: new Watches(cfg.dataDir),
     // buying during the trial adds on to it (issueFor counts trial keys as the buyer's earlier keys)
     trial: { product: "pnl-pro", days: 7, issue: (chatId: number, contact: string, days: number) => issue(payloadFor({ id: `trial-${chatId}`, product: "pnl-pro", contact }, days), cfg.licenseKey) }, ownerId: /^-?\d+$/.test(cfg.tgOwnerId) ? Number(cfg.tgOwnerId) : undefined });
   const stateFile = path.join(cfg.dataDir, "watchers.json");
@@ -112,6 +114,8 @@ async function main() {
 
   // 3. subscriptions running out
   for (const r of shop.reminders()) await tg.send(r).catch((err) => log.warn(`reminder: ${err.message}`));
+  // 4. range alerts only for chats that still have Pro (pnl-dashboard's alerts script reads the list next)
+  for (const r of shop.pruneWatches()) await tg.send(r).catch((err) => log.warn(`watch prune: ${err.message}`));
 }
 
 main().catch((err) => {

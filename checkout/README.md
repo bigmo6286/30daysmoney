@@ -115,6 +115,13 @@ Optional per product:
 
 The PnL dashboard's products are `pnl-pro` ($15 for 30 days) and `pnl-lifetime` ($39). Any bot license also unlocks the dashboard's Pro features.
 
+**Range alerts (Pro):**
+- `/watch 0x…` in the shop bot (up to 5 EVM wallets per chat), `/watch` to list, `/unwatch` to stop.
+- After each tick, the shop workflow runs pnl-dashboard's `npm run alerts` on the same data directory.
+- It reads each watched wallet's Uniswap v3 and v4 positions at most every 15 minutes, and DMs the watcher when one leaves its range or comes back.
+- The first read only records the ranges. A wallet whose read fails on any chain is skipped for that run.
+- When a chat's Pro key runs out, its watches are removed with one message.
+
 **Free trial:** `/trial` in the shop bot, or the store's `t.me/<bot>?start=trial` link, gives one 7-day Dashboard Pro key per Telegram chat. Asking again re-sends the same key.
 - Trials are not orders, so they never count as sales in `/stats` or the ledger.
 - The usual reminder arrives 3 days before the end.

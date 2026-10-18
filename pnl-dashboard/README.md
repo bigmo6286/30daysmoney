@@ -21,6 +21,7 @@ It reads the following:
 | CSV export (positions and history) | | ✓ |
 | Auto-refresh (2 min) | | ✓ |
 | Share card (image for X / Telegram, no address, amounts optional) | ✓ | ✓ |
+| Range alerts on Telegram (`/watch 0x…` in the shop bot, up to 5 EVM wallets, checked ~every 15 min) | | ✓ |
 
 Pro is unlocked offline. The viewer pastes a license key from checkout, and the page checks its ed25519 signature against checkout's public key. The keys that work are `pnl-pro` (30 days, expires), `pnl-lifetime`, or any bot license.
 
