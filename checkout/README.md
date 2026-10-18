@@ -115,6 +115,11 @@ Optional per product:
 
 The PnL dashboard's products are `pnl-pro` ($15 for 30 days) and `pnl-lifetime` ($39). Any bot license also unlocks the dashboard's Pro features.
 
+**Free trial:** `/trial` in the shop bot, or the store's `t.me/<bot>?start=trial` link, gives one 7-day Dashboard Pro key per Telegram chat. Asking again re-sends the same key.
+- Trials are not orders, so they never count as sales in `/stats` or the ledger.
+- The usual reminder arrives 3 days before the end.
+- Buying during the trial adds 30 days on top of what's left.
+
 `npm run ledger` prints paid orders as rows for the repo's `LEDGER.md`. In the serverless shop, send `/stats` to the shop bot from the owner's account (`TG_OWNER_ID`). It shows revenue against the goal and orders paid/started by product and by `?ref=` channel. Nobody else sees it.
 
 ## API

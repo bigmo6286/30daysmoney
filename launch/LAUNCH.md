@@ -34,6 +34,7 @@ A free tool is easier to post than a paid bot. Groups that ban self-promo often 
 > - It runs in your browser and reads straight from the chain.
 > - No sign-up, and it never asks for a signature.
 > - The "Share" button makes an image of your positions for X, and leaves out your address.
+> - Pro (20 wallets, history, CSV) is free for 7 days: /trial in @SHOP_BOT.
 >
 > STOREdashboard/?ref=CHANNEL
 

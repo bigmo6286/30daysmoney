@@ -8,7 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { loadConfig, loadProducts } from "./config";
 import { fmtUsdc, OrderBook, type Order, type Transfer } from "./orders";
-import { issueFor } from "./license";
+import { issue, issueFor, payloadFor } from "./license";
 import { SolanaWatcher } from "./watch/solana";
 import { BaseWatcher } from "./watch/base";
 import { readJson, writeJsonAtomic } from "./store";
@@ -53,7 +53,9 @@ async function main() {
   const products = sellable(loadProducts(cfg.dataDir), !!guide, !!storeUrl);
   const book = new OrderBook(cfg.dataDir, cfg.orderTtlMin * 60_000);
   const receivers = { ...(cfg.solReceiver ? { solana: cfg.solReceiver } : {}), ...(cfg.baseReceiver ? { base: cfg.baseReceiver } : {}) };
-  const shop = new Shop({ book, products, receivers, contact: cfg.contact, checkEveryMin, guide, storeUrl: storeUrl || undefined, ownerId: /^-?\d+$/.test(cfg.tgOwnerId) ? Number(cfg.tgOwnerId) : undefined });
+  const shop = new Shop({ book, products, receivers, contact: cfg.contact, checkEveryMin, guide, storeUrl: storeUrl || undefined,
+    // buying during the trial adds on to it (issueFor counts trial keys as the buyer's earlier keys)
+    trial: { product: "pnl-pro", days: 7, issue: (chatId: number, contact: string, days: number) => issue(payloadFor({ id: `trial-${chatId}`, product: "pnl-pro", contact }, days), cfg.licenseKey) }, ownerId: /^-?\d+$/.test(cfg.tgOwnerId) ? Number(cfg.tgOwnerId) : undefined });
   const stateFile = path.join(cfg.dataDir, "watchers.json");
   const st = readJson<{ solana?: { cursor?: string }; base?: { next?: number }; tgOffset?: number }>(stateFile, {});
   const save = (extra: object) => writeJsonAtomic(stateFile, { ...readJson(stateFile, {}), ...extra });
@@ -75,7 +77,7 @@ async function main() {
 
   // 2. payments
   const onPaid = async (o: Order) => {
-    book.setLicense(o.id, issueFor(o, products, book.all(), cfg.licenseKey));
+    book.setLicense(o.id, issueFor(o, products, [...book.all(), ...book.trials()], cfg.licenseKey));
     const paid = book.get(o.id)!;
     fs.appendFileSync(path.join(cfg.dataDir, "sales.csv"), `${new Date(paid.paid!.at).toISOString()},${paid.id},${paid.product},${paid.chain},${fmtUsdc(paid.amountMicro)},${paid.paid!.txid},${JSON.stringify(paid.contact)},${paid.ref ?? ""}\n`);
     log.info(`PAID ${paid.id} ${paid.product} ${fmtUsdc(paid.amountMicro)} USDC on ${paid.chain}`);

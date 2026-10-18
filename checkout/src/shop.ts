@@ -37,6 +37,8 @@ export interface ShopDeps {
   contact: string;
   /** how often payments are checked, for the "your key arrives within…" line */
   checkEveryMin: number;
+  /** free trial: the product it unlocks, and a signer for its key (days → license); off when absent */
+  trial?: { product: string; days: number; issue: (chatId: number, contact: string, days: number) => string };
   /** the seller's Telegram id: only this chat gets /stats */
   ownerId?: number;
   /** revenue target shown in /stats */
@@ -69,7 +71,7 @@ export const tgContact = (chatId: number, username?: string) => `tg:${chatId}${u
 /** refs are channel tags like "x" or "tg-robinhood": anything else is dropped */
 export const cleanRef = (r?: string) => (r && /^[a-z0-9-]{1,16}$/.test(r) ? r : undefined);
 
-export const chatOf = (o: Order): number | null => {
+export const chatOf = (o: Pick<Order, "contact">): number | null => {
   const m = /^tg:(-?\d+)/.exec(o.contact);
   return m ? Number(m[1]) : null;
 };
@@ -88,7 +90,7 @@ export class Shop {
   private menu(chatId: number): Reply {
     return {
       chatId,
-      text: "<b>30daysmoney bots</b>\nSelf-hosted liquidity bots. Pay once in USDC, your license key arrives here.\nPick a product:",
+      text: `<b>30daysmoney</b>\nLP bots, the PnL dashboard and guides. Pay in USDC; your key arrives here.${this.trialOn() ? "\n/trial: Dashboard Pro free for 7 days." : ""}\nPick a product:`,
       buttons: this.d.products.map((p) => [{ text: `${p.name} · ${usd(p.priceUsd)}`, data: `p:${p.id}` }]),
     };
   }
@@ -96,7 +98,7 @@ export class Shop {
   private pickChain(chatId: number, p: Product, ref?: string): Reply {
     return {
       chatId,
-      text: `<b>${esc(p.name)}</b> · ${usd(p.priceUsd)} USDC, one-time\n${esc(p.blurb)}\n\nPay with USDC on:`,
+      text: `<b>${esc(p.name)}</b> · ${usd(p.priceUsd)} USDC, ${p.days ? `per ${p.days} days` : "one-time"}\n${esc(p.blurb)}\n\nPay with USDC on:`,
       buttons: [this.chains().map((c) => ({ text: CHAIN_NAME[c], data: `c:${p.id}:${c}${ref ? `:${ref}` : ""}` }))],
     };
   }
@@ -161,9 +163,10 @@ export class Shop {
    */
   reminders(now = Date.now(), withinDays = 3): Reply[] {
     const out: Reply[] = [];
-    const latest = new Map<string, { o: Order; exp: number }>();
-    for (const o of this.d.book.all()) {
-      const exp = o.status === "paid" && o.license ? readPayload(o.license)?.expires : undefined;
+    const latest = new Map<string, { o: { id: string; product: string; contact: string; reminded?: number }; exp: number }>();
+    const keys = [...this.d.book.all().filter((o) => o.status === "paid"), ...this.d.book.trials()];
+    for (const o of keys) {
+      const exp = o.license ? readPayload(o.license)?.expires : undefined;
       const chatId = chatOf(o);
       if (!exp || chatId === null) continue;
       const k = `${chatId}|${o.product}`;
@@ -195,6 +198,41 @@ export class Shop {
       if (d) out.push(d);
     }
     return out;
+  }
+
+  private trialOn() {
+    const t = this.d.trial;
+    return !!t && !!this.product(t.product);
+  }
+
+  /** One free trial key per Telegram chat; asking again re-sends the same key. */
+  private trialCmd(chatId: number, username?: string): Reply {
+    const t = this.d.trial!;
+    const p = this.product(t.product)!;
+    const contact = tgContact(chatId, username);
+    const id = `trial:${chatId}`;
+    let tr = this.d.book.trials().find((x) => x.id === id);
+    const fresh = !tr;
+    if (!tr) {
+      tr = { id, product: p.id, contact, at: Date.now(), license: t.issue(chatId, contact, t.days) };
+      this.d.book.addTrial(tr);
+    }
+    const exp = readPayload(tr.license)?.expires;
+    const until = exp ? new Date(exp).toISOString().slice(0, 10) : "";
+    const expired = exp !== undefined && exp < Date.now();
+    return {
+      chatId,
+      text: [
+        fresh ? `🎁 Your free <b>${esc(p.name.replace(/\s*\(.*\)$/, ""))}</b> trial (${t.days} days):` : `You've had your free trial (one per account). Here's that key again:`,
+        `<code>${esc(tr.license)}</code>`,
+        until ? `${expired ? "Ended" : "Valid until"} <b>${until}</b>.` : "",
+        esc(this.deliverText(p.deliver).replace(/ Renew any time.*$/, "")),
+        expired || !fresh ? `Keep Pro: ${usd(p.priceUsd)} per ${p.days ?? 30} days.` : "We'll remind you before it ends.",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      buttons: expired || !fresh ? [[{ text: `Get ${p.name} · ${usd(p.priceUsd)}`, data: `p:${p.id}` }]] : undefined,
+    };
   }
 
   /** Seller's view: revenue against the goal, and orders started → paid by product and by store-link channel. */
@@ -252,6 +290,7 @@ export class Shop {
     const chatId = m.chat.id;
     const [cmd, arg] = m.text.trim().split(/\s+/);
     if (cmd === "/status") return { replies: this.status(chatId) };
+    if ((cmd === "/trial" || (cmd === "/start" && arg === "trial")) && this.trialOn()) return { replies: [this.trialCmd(chatId, m.from?.username)] };
     if (cmd === "/stats" && this.d.ownerId !== undefined && chatId === this.d.ownerId) return { replies: [{ chatId, text: this.stats() }] };
     if (cmd === "/start" && arg?.startsWith("buy_")) {
       // buy_<product> or buy_<product>__<ref> (the store page passes its ?ref= through)
