@@ -22,6 +22,23 @@ Replace `STORE` with the Pages URL (`https://bigmo6286.github.io/30daysmoney/`) 
   - Both bots: a buy→sell round trip, and the Jev copycat/rug screen.
 - **Free tier.** The source is public, and the free tier does manual LP plus all the safety features. Pro ($49 once) adds the autopilot, auto-rebalance and daily reports.
 
+## Lead with the free dashboard
+
+A free tool is easier to post than a paid bot. Groups that ban self-promo often allow it, and every user sees the bot and the Pro plan from inside it. So post the dashboard first and the bots second.
+
+**Dashboard link:** `STORE` + `dashboard/?ref=<channel>`. For example, use `?ref=tg-rh` for the Robinhood Chain Telegram.
+
+**Short post (dashboard):**
+
+> Made a free, read-only LP dashboard. Paste a wallet and see every position in one place: Uniswap v3 on Robinhood Chain / Base / Arbitrum, Uniswap v4 on Robinhood Chain, and Meteora DLMM. You get value, unclaimed fees and in/out of range.
+> - It runs in your browser and reads straight from the chain.
+> - No sign-up, and it never asks for a signature.
+> - The "Share" button makes an image of your positions for X, and leaves out your address.
+>
+> STOREdashboard/?ref=CHANNEL
+
+**Share cards:** every card posted carries the dashboard link, and visits from cards arrive tagged `?ref=card`. Post your own card in the X thread below. Real positions from a real wallet beat any screenshot of a landing page.
+
 ## X / Twitter thread
 
 1/ I rebuilt the popular Robinhood Chain LP bot from scratch, with the safety parts it was missing. It's open source, runs on your own server, and you control it from Telegram. Thread on what it does and what I found running it on mainnet 🧵
@@ -49,7 +66,7 @@ Not financial advice. LP can lose money. You hold your keys.
 > - It runs on your server with your keys.
 > - Paper mode first; every tx is simulated.
 > - Exact approvals only.
-> - Stop loss on by default.
+> - Stop loss and take profit in the free version (on by default in the DLMM agent).
 > - It skips v4 pools with hooks.
 >
 > The free version does manual LP and all the safety features; Pro ($49 once, USDC) adds the autopilot. Code: github.com/bigmo6286/30daysmoney · STORE. Happy to answer questions; not financial advice.
@@ -78,8 +95,8 @@ Not financial advice. LP can lose money. You hold your keys.
 
 | Day | Where | What |
 |---|---|---|
-| 1 | X | thread |
-| 1 | Robinhood Chain Telegram/Discord (tools channel) | short post |
+| 1 | X | thread, ending with a share card from the dashboard |
+| 1 | Robinhood Chain Telegram/Discord (tools channel) | dashboard post first; the bot post a day later, as a reply to anyone who asks |
 | 2 | Meteora Discord (community tools), Solana LP Telegrams | short post, DLMM angle first |
 | 3 | r/defi, r/UniSwap | longer post |
 | 4 | r/solana (if self-promo is allowed that day) | longer post, DLMM angle |

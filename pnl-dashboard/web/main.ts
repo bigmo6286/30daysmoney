@@ -6,6 +6,7 @@ import { checkLicense, type Check } from "./license";
 import { kindOf, loadAll, type Wallet } from "./load";
 import { daily, historyCsv, record, trustworthy, type Snapshot } from "./history";
 import { toCsv, type Row, type Summary, type Unit } from "../src/model";
+import { cardModel, drawCard } from "./card";
 
 const FREE_WALLETS = 1;
 const PRO_WALLETS = 20;
@@ -142,6 +143,42 @@ $("csv").onclick = () => {
   if (history.length) download(`lp-history-${day}.csv`, historyCsv(history));
 };
 
+// ── share card (free: every card posted links back here) ──
+const SHARE_URL = new URL("./?ref=card", location.href).href;
+let cardBlob: Blob | null = null;
+async function renderCard() {
+  if (!last) return;
+  const cv = drawCard(cardModel(last, $<HTMLInputElement>("share-amounts").checked), SHARE_URL, 2);
+  cardBlob = await new Promise<Blob | null>((ok) => cv.toBlob(ok, "image/png"));
+  const img = $<HTMLImageElement>("share-img");
+  if (img.src.startsWith("blob:")) URL.revokeObjectURL(img.src);
+  if (cardBlob) img.src = URL.createObjectURL(cardBlob);
+}
+const cardFile = () => (cardBlob ? new File([cardBlob], "lp-positions.png", { type: "image/png" }) : null);
+$("share").onclick = () => {
+  if (!last) return;
+  $("share-native").hidden = true;
+  $<HTMLDialogElement>("share-dlg").showModal();
+  void renderCard().then(() => ($("share-native").hidden = !(navigator.canShare?.({ files: [cardFile()!] }) ?? false)));
+};
+$("share-amounts").onchange = () => void renderCard();
+$("share-png").onclick = () => {
+  if (!cardBlob) return;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(cardBlob);
+  a.download = "lp-positions.png";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$("share-native").onclick = () => {
+  const f = cardFile();
+  if (f) void navigator.share({ files: [f], text: "My LP positions", url: SHARE_URL }).catch(() => undefined);
+};
+$("share-x").onclick = () => {
+  const text = "My LP positions across Uniswap v3/v4 and Meteora, tracked with a free read-only dashboard:";
+  window.open(`https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(SHARE_URL)}`, "_blank", "noopener");
+};
+
 // ── data views ──
 function renderTiles(s: Summary) {
   const out: string[] = [];
@@ -245,6 +282,7 @@ async function refresh() {
   if (busy) return;
   if (!wallets.length) {
     last = null;
+    $<HTMLButtonElement>("share").disabled = true;
     renderTiles({ rows: [], totals: { ETH: z(), SOL: z(), USD: z() }, daily: [], warnings: [], at: Date.now() });
     renderPositions({ rows: [], totals: { ETH: z(), SOL: z(), USD: z() }, daily: [], warnings: [], at: Date.now() });
     $("warnings").innerHTML = "";
@@ -263,6 +301,7 @@ async function refresh() {
     $("warnings").innerHTML = s.warnings.map((w) => `<div class="warn"><b>Incomplete:</b> ${esc(w)}</div>`).join("");
     renderTiles(s);
     renderPositions(s);
+    $<HTMLButtonElement>("share").disabled = !s.rows.some((r) => r.status === "open");
     if (plan.pro && trustworthy(s, seen)) {
       history = record(history, s);
       store.set("history", history);
