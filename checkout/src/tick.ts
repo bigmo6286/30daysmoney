@@ -53,7 +53,7 @@ async function main() {
   const products = sellable(loadProducts(cfg.dataDir), !!guide, !!storeUrl);
   const book = new OrderBook(cfg.dataDir, cfg.orderTtlMin * 60_000);
   const receivers = { ...(cfg.solReceiver ? { solana: cfg.solReceiver } : {}), ...(cfg.baseReceiver ? { base: cfg.baseReceiver } : {}) };
-  const shop = new Shop({ book, products, receivers, contact: cfg.contact, checkEveryMin, guide, storeUrl: storeUrl || undefined });
+  const shop = new Shop({ book, products, receivers, contact: cfg.contact, checkEveryMin, guide, storeUrl: storeUrl || undefined, ownerId: /^-?\d+$/.test(cfg.tgOwnerId) ? Number(cfg.tgOwnerId) : undefined });
   const stateFile = path.join(cfg.dataDir, "watchers.json");
   const st = readJson<{ solana?: { cursor?: string }; base?: { next?: number }; tgOffset?: number }>(stateFile, {});
   const save = (extra: object) => writeJsonAtomic(stateFile, { ...readJson(stateFile, {}), ...extra });

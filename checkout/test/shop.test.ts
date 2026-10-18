@@ -232,4 +232,23 @@ describe("subscriptions", () => {
     expect(s.reminders(t0 + 50 * DAY)).toEqual([]);
     expect(s.reminders(t0 + 58 * DAY)).toHaveLength(1);
   });
+
+  it("/stats: owner only; revenue against the goal, paid/started by product and by channel", () => {
+    const book = new OrderBook(tmp());
+    const s = new Shop({ book, products: DEFAULT_PRODUCTS, receivers: { base: BASE }, contact: "@seller", checkEveryMin: 5, ownerId: 1 });
+    expect(s.handle(msg("/stats", 1)).replies[0]!.text).toContain("$0 of $2000");
+    s.handle(tap("c:lp-bot:base:x", 20));
+    s.handle(tap("c:pnl-pro:base:x", 21));
+    s.handle(tap("c:pnl-pro:base", 22));
+    const [a, b] = book.all();
+    for (const o of [a!, b!]) book.match({ chain: "base", txid: `0x${o.id}`, amountMicro: o.amountMicro, from: "0xf", at: Date.now() });
+    const text = s.handle(msg("/stats", 1)).replies[0]!.text;
+    expect(text).toMatch(/\$64\.\d+ of \$2000<\/b> \(3%\) · 2 sales/);
+    expect(text).toContain("LP Bot Pro: 1/1 paid");
+    expect(text).toContain("LP PnL Dashboard Pro (30 days): 1/2 paid");
+    expect(text).toMatch(/x: 2\/2 paid/);
+    expect(text).toMatch(/direct: 0\/1 paid/);
+    // anyone else just gets the shop menu
+    expect(s.handle(msg("/stats", 99)).replies[0]!.text).not.toContain("of $2000");
+  });
 });

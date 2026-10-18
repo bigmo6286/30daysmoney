@@ -37,6 +37,10 @@ export interface ShopDeps {
   contact: string;
   /** how often payments are checked, for the "your key arrives within…" line */
   checkEveryMin: number;
+  /** the seller's Telegram id: only this chat gets /stats */
+  ownerId?: number;
+  /** revenue target shown in /stats */
+  goalUsd?: number;
   /** where the store lives (GitHub Pages), for {{STORE_URL}} in delivery text, e.g. the dashboard */
   storeUrl?: string;
   /** paid guides: where the store lives and the key that opens them (GUIDE_KEY) */
@@ -193,6 +197,39 @@ export class Shop {
     return out;
   }
 
+  /** Seller's view: revenue against the goal, and orders started → paid by product and by store-link channel. */
+  stats(now = Date.now()): string {
+    const all = this.d.book.all();
+    const paid = all.filter((o) => o.status === "paid");
+    const usdOf = (os: typeof all) => os.reduce((a, o) => a + o.amountMicro, 0) / 1e6;
+    const week = paid.filter((o) => (o.paid?.at ?? 0) > now - 7 * 86_400_000);
+    const goal = this.d.goalUsd ?? 2000;
+    const table = (key: (o: (typeof all)[number]) => string) => {
+      const rows = new Map<string, { started: number; paid: number; usd: number }>();
+      for (const o of all) {
+        const r = rows.get(key(o)) ?? { started: 0, paid: 0, usd: 0 };
+        r.started++;
+        if (o.status === "paid") {
+          r.paid++;
+          r.usd += o.amountMicro / 1e6;
+        }
+        rows.set(key(o), r);
+      }
+      return [...rows.entries()]
+        .sort((a, b) => b[1].usd - a[1].usd || b[1].started - a[1].started)
+        .map(([k, r]) => `${esc(k)}: ${r.paid}/${r.started} paid · ${usd(Math.round(r.usd * 100) / 100)}`);
+    };
+    const total = usdOf(paid);
+    return [
+      `📊 <b>${usd(Math.round(total * 100) / 100)} of ${usd(goal)}</b> (${Math.floor((total / goal) * 100)}%) · ${paid.length} sale${paid.length === 1 ? "" : "s"}`,
+      `Last 7 days: ${usd(Math.round(usdOf(week) * 100) / 100)} from ${week.length}`,
+      all.length ? "" : "No orders yet.",
+      ...(all.length ? ["<b>By product</b> (paid/started)", ...table((o) => this.product(o.product)?.name ?? o.product), "", "<b>By channel</b> (store link ?ref=)", ...table((o) => o.ref ?? "direct")] : []),
+    ]
+      .filter((l, i, a) => l || a[i - 1])
+      .join("\n");
+  }
+
   handle(u: Update): { replies: Reply[]; answerCallback?: string } {
     if (u.callback_query) {
       const q = u.callback_query;
@@ -215,6 +252,7 @@ export class Shop {
     const chatId = m.chat.id;
     const [cmd, arg] = m.text.trim().split(/\s+/);
     if (cmd === "/status") return { replies: this.status(chatId) };
+    if (cmd === "/stats" && this.d.ownerId !== undefined && chatId === this.d.ownerId) return { replies: [{ chatId, text: this.stats() }] };
     if (cmd === "/start" && arg?.startsWith("buy_")) {
       // buy_<product> or buy_<product>__<ref> (the store page passes its ?ref= through)
       const [productId, ref] = arg.slice(4).split("__");

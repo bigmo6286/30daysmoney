@@ -103,7 +103,7 @@ Not financial advice. LP can lose money. You hold your keys.
 | 5 | reply to people asking "is there a bot for…" | answer the question first, link second |
 | 7 | X | results thread: what paper runs showed, honestly |
 
-**Track what converts:** add `?ref=x`, `?ref=tg`, `?ref=reddit` to the store link. Sales show which channel paid (the shop records every order), so after week 1 double down on the one that sold.
+**Track what converts:** add `?ref=x`, `?ref=tg`, `?ref=reddit` to the store link. Send `/stats` to the shop bot from your own Telegram account (`TG_OWNER_ID`). It shows revenue against the $2,000 goal and orders paid/started by product and by channel. After week 1, double down on the channel that sold.
 
 ## Bounties (revenue stream 4)
 
