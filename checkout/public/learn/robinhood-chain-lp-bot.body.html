@@ -1,0 +1,23 @@
+<!-- title: A Telegram LP bot for Robinhood Chain (Uniswap v3 + v4) | desc: Run Uniswap v3 and v4 liquidity on Robinhood Chain from Telegram. Paper mode first, every transaction simulated, your keys stay on your machine. -->
+<h1>A Telegram LP bot for Robinhood Chain</h1>
+<p class="lead">LP Bot manages Uniswap liquidity on Robinhood Chain (and Base and Arbitrum) from a Telegram chat: paste a token, pick a pool, choose an amount, confirm. It runs on your machine with your key. Nobody else holds your funds.</p>
+<a class="cta" href="../?ref=learn-lpbot#products">See LP Bot</a> <a class="cta alt" href="https://github.com/bigmo6286/30daysmoney/tree/main/lp-bot">Read the code</a>
+
+<h2>What it does</h2>
+<ul>
+<li><b>Uniswap v3 and v4.</b> On Robinhood Chain, v4 often has more trading than v3. The bot lists both side by side, and only uses v4 pools without hooks.</li>
+<li><b>Paper mode by default.</b> It reads real pools, quotes real swaps and estimates fees, but sends nothing until you switch it to live.</li>
+<li><b>Simulated before sent.</b> Every live transaction is dry-run first. Approvals are for exact amounts, never unlimited.</li>
+<li><b>Monitoring.</b> Out-of-range alerts, take-profit, stop loss, and auto-rebalance after a grace period.</li>
+<li><b>Autopilot (Pro).</b> It scans pools, screens tokens (contract checks plus a buy→sell round trip and the Jev rug/copycat screen), opens positions and rotates out of them.</li>
+</ul>
+
+<h2>Free vs Pro</h2>
+<table>
+<tr><th>Free</th><th>Pro ($49 once)</th></tr>
+<tr><td>manual LP, paper mode, alerts, stop loss and take profit</td><td>everything in Free, plus the autopilot, auto-rebalance and a daily report; the same key also unlocks Dashboard Pro</td></tr>
+</table>
+<p>Pay in USDC on Base or Solana through the Telegram shop bot. The key arrives in the same chat within minutes. VPS setup is available for $99.</p>
+
+<div class="note">Providing liquidity can lose money, especially on volatile tokens. Start in paper mode, then go live with an amount you can afford to lose.</div>
+<a class="cta" href="../?ref=learn-lpbot#products">Get LP Bot</a>

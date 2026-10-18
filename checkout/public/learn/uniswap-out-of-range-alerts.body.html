@@ -1,0 +1,15 @@
+<!-- title: Get a Telegram alert when your Uniswap position goes out of range | desc: Out-of-range liquidity earns no fees. Get a Telegram message when a Uniswap v3/v4 position on Robinhood Chain, Base or Arbitrum leaves its range, and when it's back. -->
+<h1>Get a Telegram alert when your Uniswap position goes out of range</h1>
+<p class="lead">When the price leaves your range, your position stops earning and sits entirely in one token. If you don't notice for a day, that's a day of fees lost. Here's how to get a message as soon as it happens, without running anything yourself.</p>
+
+<h2>Set it up</h2>
+<ol>
+<li>Open the shop bot from the <a href="../?ref=learn-alerts">store</a> and send <code>/trial</code>. That gives you Dashboard Pro free for 7 days, with no payment.</li>
+<li>Send <code>/watch 0x…</code> with your wallet address. You can watch up to 5 wallets.</li>
+<li>The first check records where your positions are. After that you get a message when one leaves its range ("⚠️ Out of range: …") and when it's back ("✅ Back in range").</li>
+</ol>
+<p>Wallets are checked about every 15 minutes. The alerts cover Uniswap v3 on Robinhood Chain, Base and Arbitrum, and Uniswap v4 on Robinhood Chain. A wallet whose read fails is skipped rather than reported as out of range, so a flaky RPC doesn't cause false alarms.</p>
+
+<h2>What else Pro includes</h2>
+<p>Up to 20 wallets in the <a href="../dashboard/?ref=learn-alerts">dashboard</a>, daily history charts of value and fees, CSV export and auto-refresh. After the trial it's $15 for 30 days, or $39 for lifetime.</p>
+<a class="cta" href="../?ref=learn-alerts">Start the free trial</a>

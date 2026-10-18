@@ -6,7 +6,7 @@ import { OrderBook } from "../src/orders";
 import { DEFAULT_PRODUCTS } from "../src/config";
 import { chatOf, Shop, tgContact, type Update } from "../src/shop";
 import { open, packDir, seal, stateKey, unpackDir } from "../src/statebox";
-import { renderStore } from "../src/site";
+import { learnMeta, renderLearn, renderStore, sitemap } from "../src/site";
 import { Watches } from "../src/watches";
 import { generateKeys, issue, issueFor, payloadFor, readPayload, verify } from "../src/license";
 
@@ -378,5 +378,25 @@ describe("subscriptions", () => {
     expect(s.handle(msg(`/paidout ${code}`, AFF)).replies[0]!.text).not.toContain("Marked"); // owner only
     expect(s.handle(msg(`/paidout ${code}`, 1)).replies[0]!.text).toContain("Marked $9.80");
     expect(s.handle(msg("/stats", 1)).replies[0]!.text).not.toContain("Affiliates to pay");
+  });
+
+  it("guides: every committed page has a title/description, renders with absolute URLs and no placeholders; the sitemap lists them", () => {
+    const dir = new URL("../public/learn/", import.meta.url).pathname;
+    const head = fs.readFileSync(path.join(dir, "_head.html"), "utf8");
+    const foot = fs.readFileSync(path.join(dir, "_foot.html"), "utf8");
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith(".body.html"));
+    expect(files.length).toBeGreaterThanOrEqual(4);
+    for (const f of files) {
+      const slug = f.replace(".body.html", "");
+      const body = fs.readFileSync(path.join(dir, f), "utf8");
+      const p = learnMeta(slug, body);
+      expect(p.desc.length).toBeLessThanOrEqual(170); // fits a search result
+      const html = renderLearn(head, foot, body, p, "https://o.github.io/r");
+      expect(html).not.toMatch(/\{\{[A-Z_]+\}\}/);
+      expect(html).toContain(`<link rel="canonical" href="https://o.github.io/r/learn/${slug}.html">`);
+      expect(html).toContain("../dashboard/?ref=learn");
+    }
+    expect(() => learnMeta("x", "<h1>no meta</h1>")).toThrow(/first line/);
+    expect(sitemap("https://o.github.io/r", ["", "learn/a.html"])).toContain("<loc>https://o.github.io/r/learn/a.html</loc>");
   });
 });

@@ -42,6 +42,48 @@ export function renderStore(tpl: string, o: StoreOptions): string {
     .replaceAll("{{STORE_URL}}", () => (o.storeUrl || pagesUrl(o.repoUrl)).replace(/"/g, "").replace(/\/?$/, "/"));
 }
 
+export interface LearnPage {
+  slug: string;
+  title: string;
+  desc: string;
+}
+
+/** `<!-- title: … | desc: … -->` on a guide's first line */
+export function learnMeta(slug: string, body: string): LearnPage {
+  const m = /^<!--\s*title:\s*(.+?)\s*\|\s*desc:\s*(.+?)\s*-->/.exec(body);
+  if (!m) throw new Error(`learn/${slug}: first line must be <!-- title: … | desc: … -->`);
+  if (/["<>]/.test(m[1]! + m[2]!)) throw new Error(`learn/${slug}: no quotes or angle brackets in title/desc`);
+  return { slug, title: m[1]!, desc: m[2]! };
+}
+
+export function renderLearn(head: string, foot: string, body: string, p: LearnPage, storeUrl: string): string {
+  const fill = (t: string) =>
+    t.replaceAll("{{TITLE}}", () => p.title).replaceAll("{{DESC}}", () => p.desc).replaceAll("{{SLUG}}", () => p.slug).replaceAll("{{STORE_URL}}", () => storeUrl.replace(/\/?$/, "/"));
+  return fill(head) + body.replace(/^<!--[\s\S]*?-->\n?/, "") + foot;
+}
+
+function buildLearn(src: string, out: string, storeUrl: string): LearnPage[] {
+  if (!fs.existsSync(src)) return [];
+  const head = fs.readFileSync(path.join(src, "_head.html"), "utf8");
+  const foot = fs.readFileSync(path.join(src, "_foot.html"), "utf8");
+  fs.mkdirSync(out, { recursive: true });
+  const pages: LearnPage[] = [];
+  for (const f of fs.readdirSync(src).filter((x) => x.endsWith(".body.html")).sort()) {
+    const slug = f.replace(/\.body\.html$/, "");
+    const body = fs.readFileSync(path.join(src, f), "utf8");
+    const p = learnMeta(slug, body);
+    fs.writeFileSync(path.join(out, `${slug}.html`), renderLearn(head, foot, body, p, storeUrl));
+    pages.push(p);
+  }
+  const index = { slug: "index", title: "LP guides: Uniswap v3/v4 and Meteora DLMM", desc: "Short, practical guides for liquidity providers on Robinhood Chain, Base, Arbitrum and Solana." };
+  const list = `<h1>${index.title}</h1>\n<p class="lead">${index.desc}</p>\n<ul>\n${pages.map((p) => `<li><a href="${p.slug}.html">${p.title}</a><br><span style="color:var(--muted);font-size:15px">${p.desc}</span></li>`).join("\n")}\n</ul>\n`;
+  fs.writeFileSync(path.join(out, "index.html"), renderLearn(head, foot, list, index, storeUrl).replace(`learn/index.html"`, `learn/"`));
+  return pages;
+}
+
+export const sitemap = (storeUrl: string, paths: string[]) =>
+  `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${paths.map((p) => `  <url><loc>${storeUrl.replace(/\/?$/, "/")}${p}</loc></url>`).join("\n")}\n</urlset>\n`;
+
 if (process.argv[1] && /site\.[jt]s$/.test(process.argv[1])) {
   const out = path.resolve(process.argv[2] || "_site");
   const tpl = fs.readFileSync(new URL("../public/store.html", import.meta.url), "utf8");
@@ -65,5 +107,10 @@ if (process.argv[1] && /site\.[jt]s$/.test(process.argv[1])) {
     fs.mkdirSync(path.join(out, "guides"), { recursive: true });
     for (const f of fs.readdirSync(guides)) if (f.endsWith(".json")) fs.copyFileSync(path.join(guides, f), path.join(out, "guides", f));
   }
-  console.log(`wrote ${path.join(out, "index.html")}`);
+  // search-friendly guides (public/learn/*.body.html), their index, and a sitemap
+  const store = (process.env.STORE_URL || "").trim() || pagesUrl(process.env.REPO_URL || "https://github.com/bigmo6286/30daysmoney");
+  const pages = buildLearn(path.join(pub, "learn"), path.join(out, "learn"), store);
+  fs.writeFileSync(path.join(out, "sitemap.xml"), sitemap(store, ["", "dashboard/", "learn/", ...pages.map((p) => `learn/${p.slug}.html`)]));
+  fs.writeFileSync(path.join(out, "robots.txt"), `User-agent: *\nAllow: /\nSitemap: ${store.replace(/\/?$/, "/")}sitemap.xml\n`);
+  console.log(`wrote ${path.join(out, "index.html")} + ${pages.length} guides`);
 }
