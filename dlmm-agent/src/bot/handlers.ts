@@ -3,7 +3,7 @@ import type { Telegram, Incoming, Keyboard } from "./telegram";
 import type { Agent } from "../auto/agent";
 import type { Pool } from "../auto/discovery";
 import type { GateResult } from "../auto/gates";
-import type { SettingsStore } from "../config";
+import { PRESETS, presetOf, type SettingsStore } from "../config";
 import type { PositionBook } from "../positions";
 import { age, esc, pct, short, signedSol, sol, usd } from "../format";
 import { shortErr } from "../chain/solana";
@@ -17,6 +17,7 @@ const HELP = `<b>DLMM Agent</b> · Meteora liquidity on Solana
 /open &lt;pool|mint&gt; [SOL]: open a position (asks to confirm)
 /close &lt;id&gt; · /closeall
 /auto: autopilot status · /auto on|off · /auto block &lt;mint&gt;
+/preset: safe · balanced · aggressive
 /settings · /set &lt;key&gt; &lt;value&gt;`;
 
 export class Handlers {
@@ -70,6 +71,8 @@ export class Handlers {
         return this.autoCmd(args);
       case "/settings":
         return this.showSettings();
+      case "/preset":
+        return this.presetCmd(args[0]);
       case "/set": {
         const [k, v] = args;
         if (!k || v === undefined) return void (await this.tg.send("usage: /set &lt;key&gt; &lt;value&gt;"));
@@ -79,6 +82,17 @@ export class Handlers {
       default:
         await this.tg.send("Unknown command. /help");
     }
+  }
+
+  private async presetCmd(name?: string) {
+    if (!name) {
+      const cur = presetOf(this.settings.value);
+      const lines = Object.entries(PRESETS).map(([n, p]) => `${n === cur ? "▶" : "·"} <b>${n}</b>: ${esc(p.blurb)}`);
+      return void (await this.tg.send(`🎛 <b>Presets</b> (now: ${cur ?? "custom"})\n${lines.join("\n")}\n\n/preset &lt;name&gt; to switch. Sizing (sizeSol, maxOpen, dailySol) is never changed.`));
+    }
+    const changed = this.settings.applyPreset(name.toLowerCase());
+    const diff = changed.map((c) => `${c.key}: ${JSON.stringify(c.from)} → ${JSON.stringify(c.to)}`).join("\n");
+    await this.tg.send(`✅ Preset <b>${esc(name.toLowerCase())}</b>${changed.length ? `\n<code>${esc(diff)}</code>` : " (already set)"}`);
   }
 
   private async onButton(data: string) {

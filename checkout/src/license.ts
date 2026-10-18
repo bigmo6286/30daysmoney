@@ -3,8 +3,6 @@
  * Anyone with the public key can verify a key offline; only the server can issue one.
  */
 import crypto from "node:crypto";
-import type { Product } from "./config";
-import type { Order } from "./orders";
 
 export interface LicensePayload {
   order: string;
@@ -74,7 +72,10 @@ export function verify(license: string, publicKey: string): LicensePayload | nul
 const buyerOf = (contact: string) => contact.split(" ")[0]!.toLowerCase();
 
 /** The license key for a paid order, extending the same buyer's running subscription if they have one. */
-export function issueFor(o: Order, products: Product[], orders: Order[], privateKey: string, now = Date.now()): string {
+// structural, not imported: the bots' tests import this file without checkout's dependencies
+type Paid = { id: string; product: string; contact: string; license?: string };
+
+export function issueFor(o: Paid, products: { id: string; days?: number }[], orders: Paid[], privateKey: string, now = Date.now()): string {
   const earlier = orders.filter((x) => x.id !== o.id && x.license && x.product === o.product && buyerOf(x.contact) === buyerOf(o.contact)).map((x) => x.license!);
   return issue(payloadFor(o, products.find((p) => p.id === o.product)?.days, earlier, now), privateKey);
 }

@@ -190,4 +190,42 @@ describe("telegram", () => {
     await say("/set nope 1");
     expect(out.at(-1)!.text).toContain("unknown setting");
   });
+
+  it("/preset lists, switches with a diff, keeps sizing and the safety floors", async () => {
+    const r = setup();
+    r.settings.set("sizeSol", "0.25");
+    const out: string[] = [];
+    const tg = { ownerId: "1", send: async (text: string) => (out.push(text), { message_id: out.length }), edit: async () => {}, answer: async () => {} };
+    const h = new Handlers(tg as any, r.agent, r.book, r.settings, { address: "Wallet111", balanceSol: async () => 1.5 });
+    const say = (text: string) => h.handle({ chatId: "1", fromId: "1", text });
+    await say("/preset");
+    expect(out.at(-1)).toContain("now: balanced");
+    await say("/preset safe");
+    expect(out.at(-1)).toContain("stopLossPct: 15 → 10");
+    expect(r.settings.value).toMatchObject({ stopLossPct: 10, minTokenAgeHours: 24, sizeSol: 0.25 });
+    await say("/preset");
+    expect(out.at(-1)).toContain("now: safe");
+    r.settings.set("minHolders", "999");
+    await say("/preset");
+    expect(out.at(-1)).toContain("now: custom");
+    await say("/preset balanced");
+    expect(r.settings.value).toMatchObject({ stopLossPct: 15, minHolders: 500, sizeSol: 0.25 });
+    await say("/preset balanced");
+    expect(out.at(-1)).toContain("already set");
+  });
+});
+
+describe("presets", () => {
+  it("every preset keeps the stop loss on, mint renounced, Jev on, and never loosens the rug screen", async () => {
+    const { PRESETS, SettingsSchema } = await import("../src/config");
+    const d = SettingsSchema.parse({});
+    for (const p of Object.values(PRESETS)) {
+      const s = SettingsSchema.parse({ ...d, ...p.values });
+      expect(s.stopLossPct).toBeGreaterThan(0);
+      expect(s.requireMintRenounced).toBe(true);
+      expect(s.screen).toBe(true);
+      expect(s.maxRugPct).toBeLessThanOrEqual(d.maxRugPct);
+      expect(s.sizeSol).toBe(d.sizeSol);
+    }
+  });
 });
