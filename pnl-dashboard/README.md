@@ -4,7 +4,32 @@ One page for every LP position you run: our bots' positions with exact PnL, plus
 
 Rebuild of FlipZ3ro's poolpnl, which only covered Uniswap v4 on Robinhood Chain and got several numbers wrong (deposits valued at today's price, fees counted as withdrawals, prices inverted for half the pools, failed reads silently dropped, and an open RPC relay spoofing another site's origin).
 
-## What it shows
+## In the browser (GitHub Pages)
+
+`web/` is a version that runs entirely in the browser, deployed by `pages.yml` to `https://<owner>.github.io/<repo>/dashboard/`. It needs no server and no account. Wallet addresses and history stay in the viewer's `localStorage`. Positions are read straight from public RPCs.
+
+It reads the following:
+- Uniswap v3 on Robinhood Chain, Base and Arbitrum.
+- Uniswap v4 on Robinhood Chain. Token ids come from the PositionManager's Transfer logs, and prices and fees from StateView.
+- Meteora DLMM on Solana. This needs the viewer's own RPC URL (Settings), because Solana's public RPC refuses browsers. A free Helius key works.
+
+| | Free | Pro |
+|---|---|---|
+| Wallets | 1 | 20 |
+| Value, unclaimed fees, range per position | ✓ | ✓ |
+| History (hourly readings, 180 days, charts and table) | | ✓ |
+| CSV export (positions and history) | | ✓ |
+| Auto-refresh (2 min) | | ✓ |
+
+Pro is unlocked offline. The viewer pastes a license key from checkout, and the page checks its ed25519 signature against checkout's public key. The keys that work are `pnl-pro` (30 days, expires), `pnl-lifetime`, or any bot license.
+
+A refresh where a chain that previously held positions failed to read is not recorded, so a dead RPC never draws a fake drop in the history.
+
+```bash
+npm run build:web -- dist/dashboard   # index.html + app.js (+ a Solana chunk, loaded only for Solana wallets)
+```
+
+## What it shows (server version)
 
 - Per unit (ETH, SOL): open value, unclaimed fees, unrealized PnL (where the cost basis is known), realized PnL and win rate.
 - A 12-week calendar of daily realized PnL (blue profit, red loss, gray none; hover for the number) and the same data as a table.

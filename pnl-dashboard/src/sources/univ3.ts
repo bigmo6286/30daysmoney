@@ -62,8 +62,8 @@ export function valueInWeth(p: Pick<V3Position, "token0" | "token1" | "sqrtPrice
 }
 
 /** position NFTs read per wallet (newest first) */
-const MAX_IDS = 200;
-const READ_CONCURRENCY = 6;
+export const MAX_IDS = 200;
+export const READ_CONCURRENCY = 6;
 
 const rateLimited = (e: unknown) => {
   const x = e as { info?: { error?: { code?: number } }; error?: { code?: number }; message?: string };
@@ -71,7 +71,7 @@ const rateLimited = (e: unknown) => {
 };
 
 /** Retry a read that hit a provider's rate limit (Alchemy's free tier caps compute units per second). */
-async function withRetry<T>(f: () => Promise<T>, tries = 5): Promise<T> {
+export async function withRetry<T>(f: () => Promise<T>, tries = 5): Promise<T> {
   for (let i = 0; ; i++) {
     try {
       return await f();
@@ -83,7 +83,7 @@ async function withRetry<T>(f: () => Promise<T>, tries = 5): Promise<T> {
 }
 
 /** f over items with at most `n` in flight, results in order. */
-async function mapLimited<T, R>(items: T[], n: number, f: (t: T) => Promise<R>): Promise<R[]> {
+export async function mapLimited<T, R>(items: T[], n: number, f: (t: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);
   let next = 0;
   await Promise.all(
@@ -174,7 +174,7 @@ export function v3Rows(chain: V3Chain, owner: string, positions: V3Position[]): 
       chain: chain.name,
       wallet: owner,
       id: p.tokenId,
-      pair: `${wethIs0 ? p.symbol1 : p.symbol0}/${wethIs0 ? p.symbol0 : p.symbol1} ${p.fee / 10_000}%`,
+      pair: `${wethIs0 ? p.symbol1 : p.symbol0}/${wethIs0 ? p.symbol0 : p.symbol1}${p.fee ? ` ${p.fee / 10_000}%` : ""}`,
       status: "open",
       unit: q?.unit ?? "ETH",
       valueNative: value === null ? undefined : Number(value) / scale,

@@ -1,12 +1,12 @@
 # The store page on GitHub Pages (https://<owner>.github.io/<repo>/), built from checkout's product
-# list. Needs Settings → Pages → Source: "GitHub Actions", and the repo variable SHOP_BOT.
+# list, and the PnL dashboard at …/dashboard/. Needs Settings → Pages → Source: "GitHub Actions", and the repo variable SHOP_BOT.
 # This must be the only workflow that deploys Pages: GitHub's starter "static" / "Jekyll" workflows
 # publish the whole repository instead and overwrite the store on every push.
 name: pages
 on:
   push:
     branches: [main]
-    paths: ["checkout/public/**", "checkout/src/site.ts", "checkout/src/config.ts", ".github/workflows/**"]
+    paths: ["checkout/public/**", "checkout/src/site.ts", "checkout/src/config.ts", "pnl-dashboard/src/**", "pnl-dashboard/web/**", "pnl-dashboard/package-lock.json", ".github/workflows/**"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -28,7 +28,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: checkout/package-lock.json
+          cache-dependency-path: |
+            checkout/package-lock.json
+            pnl-dashboard/package-lock.json
       - run: npm ci
         working-directory: checkout
       - run: npm run -s site -- ../_site
@@ -37,6 +39,11 @@ jobs:
           SHOP_BOT: ${{ vars.SHOP_BOT }}
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
           CHECK_EVERY_MIN: "15"
+          CONTACT: ${{ vars.CONTACT }}
+          BASE_RECEIVER: ${{ vars.BASE_RECEIVER }}
+          SOL_RECEIVER: ${{ vars.SOL_RECEIVER }}
+      - run: npm ci && npm run -s build:web -- ../_site/dashboard
+        working-directory: pnl-dashboard
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

@@ -11,6 +11,10 @@ export const ProductSchema = z.object({
   blurb: z.string().max(400),
   /** shown to the buyer once paid: download link, invite instructions, "we'll DM you within 12h"… */
   deliver: z.string().max(1000),
+  /** a subscription: the key expires this many days after payment (renewing early adds on) */
+  days: z.number().int().positive().max(3650).optional(),
+  /** what the key is for, for the delivery message: a bot's .env (default), the dashboard, or nothing */
+  keyFor: z.enum(["bot", "dashboard", "none"]).optional(),
 });
 export type Product = z.infer<typeof ProductSchema>;
 
@@ -49,6 +53,24 @@ export const DEFAULT_PRODUCTS: Product[] = [
     priceUsd: 19,
     blurb: "Build a flash-loan executor that can't be drained and reverts unless it profits: Morpho Blue + Uniswap v3 on Robinhood Chain, Base and Ethereum, with real sizing, gas and mainnet-fork numbers.",
     deliver: "Read it here (bookmark it; the link is your copy): {{GUIDE_URL:flash-loans}}",
+    keyFor: "none",
+  },
+  {
+    id: "pnl-pro",
+    name: "LP PnL Dashboard Pro (30 days)",
+    priceUsd: 15,
+    blurb: "Every Uniswap v3/v4 and Meteora DLMM position across up to 20 wallets: value, unclaimed fees, range, with daily history charts, CSV export and auto-refresh. Runs in your browser; read-only.",
+    deliver: "Open {{STORE_URL}}dashboard/ and paste your key in Settings. Renew any time with /buy: the new key adds 30 days to whatever is left.",
+    days: 30,
+    keyFor: "dashboard",
+  },
+  {
+    id: "pnl-lifetime",
+    name: "LP PnL Dashboard Pro (lifetime)",
+    priceUsd: 39,
+    blurb: "Dashboard Pro with no renewals: up to 20 wallets, history, CSV, auto-refresh, and every update.",
+    deliver: "Open {{STORE_URL}}dashboard/ and paste your key in Settings. It never expires.",
+    keyFor: "dashboard",
   },
 ];
 

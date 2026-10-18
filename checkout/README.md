@@ -108,6 +108,13 @@ Products and prices live in code (`src/config.ts`) or override them with `data/p
 [{ "id": "lp-bot", "name": "LP Bot Pro", "priceUsd": 49, "blurb": "…", "deliver": "…" }]
 ```
 
+Optional per product:
+- `days`: a subscription. The key carries an `expires` date that many days after payment. Renewing early adds on to the buyer's running key, matched by their Telegram chat. The shop bot reminds the buyer once, 3 days before the key runs out, with a Renew button.
+- `keyFor`: `"bot"` (default), `"dashboard"` or `"none"`. This picks the line in the delivery message that says where the key goes.
+- `{{STORE_URL}}` in the delivery text becomes the Pages address, so `{{STORE_URL}}dashboard/` links to the dashboard.
+
+The PnL dashboard's products are `pnl-pro` ($15 for 30 days) and `pnl-lifetime` ($39). Any bot license also unlocks the dashboard's Pro features.
+
 `npm run ledger` prints paid orders as rows for the repo's `LEDGER.md`.
 
 ## API

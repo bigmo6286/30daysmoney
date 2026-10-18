@@ -32,6 +32,8 @@ export interface Order {
   /** where the buyer came from (store link ?ref=), for seeing which channel sells */
   ref?: string;
   license?: string;
+  /** when the buyer was told their subscription is about to run out */
+  reminded?: number;
 }
 
 interface File {
@@ -115,6 +117,14 @@ export class OrderBook {
     const o = this.get(id);
     if (o) {
       o.license = license;
+      this.save();
+    }
+  }
+
+  setReminded(id: string, at: number) {
+    const o = this.get(id);
+    if (o) {
+      o.reminded = at;
       this.save();
     }
   }
