@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { OrderBook } from "../src/orders";
 import { DEFAULT_PRODUCTS } from "../src/config";
-import { chatOf, Shop, tgContact, type Update } from "../src/shop";
+import { botProfile, chatOf, Shop, tgContact, type Update } from "../src/shop";
 import { open, packDir, seal, stateKey, unpackDir } from "../src/statebox";
 import { learnMeta, renderLearn, renderStore, sitemap } from "../src/site";
 import { Watches } from "../src/watches";
@@ -398,5 +398,20 @@ describe("subscriptions", () => {
     }
     expect(() => learnMeta("x", "<h1>no meta</h1>")).toThrow(/first line/);
     expect(sitemap("https://o.github.io/r", ["", "learn/a.html"])).toContain("<loc>https://o.github.io/r/learn/a.html</loc>");
+  });
+
+  it("bot profile fits Telegram's limits, and every command in the menu is one the shop answers", () => {
+    const p = botProfile({ trial: true, watches: true, affiliate: 20 });
+    expect(p.description.length).toBeLessThanOrEqual(512);
+    expect(p.shortDescription.length).toBeLessThanOrEqual(120);
+    for (const c of p.commands) {
+      expect(c.command).toMatch(/^[a-z0-9_]{1,32}$/);
+      expect(c.description.length).toBeLessThanOrEqual(256);
+    }
+    expect(p.commands.map((c) => c.command)).toEqual(["buy", "status", "trial", "watch", "invite"]);
+    expect(botProfile({ trial: false, watches: false }).commands.map((c) => c.command)).toEqual(["buy", "status"]);
+    // /buy shows the product menu
+    const s = new Shop({ book: new OrderBook(tmp()), products: DEFAULT_PRODUCTS, receivers: { base: BASE }, contact: "", checkEveryMin: 5 });
+    expect(s.handle(msg("/buy", 60)).replies[0]!.buttons!.length).toBe(DEFAULT_PRODUCTS.length);
   });
 });

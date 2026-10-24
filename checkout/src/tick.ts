@@ -13,7 +13,7 @@ import { SolanaWatcher } from "./watch/solana";
 import { BaseWatcher } from "./watch/base";
 import { readJson, writeJsonAtomic } from "./store";
 import { Watches } from "./watches";
-import { sellable, Shop, type Button, type Reply, type Update } from "./shop";
+import { botProfile, sellable, Shop, type Button, type Reply, type Update } from "./shop";
 import { logger } from "./log";
 
 const log = logger("tick");
@@ -67,11 +67,26 @@ async function main() {
     // buying during the trial adds on to it (issueFor counts trial keys as the buyer's earlier keys)
     trial: { product: "pnl-pro", days: 7, issue: (chatId: number, contact: string, days: number) => issue(payloadFor({ id: `trial-${chatId}`, product: "pnl-pro", contact }, days), cfg.licenseKey) }, ownerId: /^-?\d+$/.test(cfg.tgOwnerId) ? Number(cfg.tgOwnerId) : undefined });
   const stateFile = path.join(cfg.dataDir, "watchers.json");
-  const st = readJson<{ solana?: { cursor?: string }; base?: { next?: number }; tgOffset?: number }>(stateFile, {});
+  const st = readJson<{ solana?: { cursor?: string }; base?: { next?: number }; tgOffset?: number; profile?: string }>(stateFile, {});
   const save = (extra: object) => writeJsonAtomic(stateFile, { ...readJson(stateFile, {}), ...extra });
   const owner = (text: string) => (cfg.tgOwnerId ? tg.send({ chatId: Number(cfg.tgOwnerId), text }).catch((err) => log.warn(`owner ping: ${err.message}`)) : undefined);
 
   // 1. Telegram: everything since the last pass (Telegram keeps updates for 24 h)
+  // 0. the bot's command menu and descriptions, whenever they change
+  const profile = botProfile({ trial: true, watches: true, affiliate: shopBot ? refPct(e.REF_PCT) : undefined });
+  const profileKey = JSON.stringify(profile);
+  if (st.profile !== profileKey) {
+    try {
+      await tg.call("setMyCommands", { commands: profile.commands });
+      await tg.call("setMyDescription", { description: profile.description });
+      await tg.call("setMyShortDescription", { short_description: profile.shortDescription });
+      save({ profile: profileKey });
+      log.info("bot profile updated");
+    } catch (err) {
+      log.warn(`bot profile: ${err instanceof Error ? err.message : err}`); // retried next tick
+    }
+  }
+
   const updates = await tg.call<Update[]>("getUpdates", { offset: st.tgOffset ?? 0, timeout: 0, allowed_updates: ["message", "callback_query"] });
   for (const u of updates) {
     try {
