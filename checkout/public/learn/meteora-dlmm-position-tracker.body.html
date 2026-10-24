@@ -1,0 +1,26 @@
+<!-- title: Meteora DLMM position tracker (free, read-only) | desc: Track your Meteora DLMM positions on Solana next to your Uniswap positions: value in SOL, unclaimed fees, and in/out of range. Runs in your browser. -->
+<h1>Meteora DLMM position tracker</h1>
+<p class="lead">If you LP on Meteora and on Uniswap, you're probably checking two or three sites. The free LP PnL dashboard shows both in one view, read straight from the chain.</p>
+<a class="cta" href="../dashboard/?ref=learn-dlmm">Open the free dashboard</a>
+
+<h2>Set it up (one minute)</h2>
+<ol>
+<li>Solana's public RPC refuses requests from browsers, so the dashboard needs your own RPC URL. A free <a href="https://www.helius.dev/" rel="nofollow">Helius</a> key works. In the dashboard, open <b>Settings</b> and paste the RPC URL. It's stored only in your browser.</li>
+<li>Add your Solana wallet address.</li>
+<li>Each DLMM position shows its value in SOL (for SOL pairs), its unclaimed fees and whether the active bin is inside your range.</li>
+</ol>
+
+<h2>What it reads</h2>
+<p>Positions come from Meteora's own SDK: <code>getAllLbPairPositionsByUser</code>. Value is the tokens in your bins at the pool's current active-bin price, plus unclaimed fees. Nothing is estimated from an API that might lag. If a read fails, the dashboard says so instead of showing zero.</p>
+
+<h2>Automating DLMM positions</h2>
+<p>For positions that open, rebalance and close themselves, there's the <a href="../?ref=learn-dlmm#products">DLMM Agent</a>, a Telegram bot that runs on your own machine.</p>
+<ul>
+<li>Screening is deterministic, with no LLM picking trades.</li>
+<li>It starts in paper mode.</li>
+<li>Every transaction is simulated first.</li>
+<li>Stop loss is on by default.</li>
+<li>Presets: safe, balanced or aggressive.</li>
+</ul>
+<p>The free version does manual LP; Pro adds the autopilot.</p>
+<a class="cta" href="../dashboard/?ref=learn-dlmm">Track your DLMM positions</a> <a class="cta alt" href="../?ref=learn-dlmm#products">See the DLMM Agent</a>

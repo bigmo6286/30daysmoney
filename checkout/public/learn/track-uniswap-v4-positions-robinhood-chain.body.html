@@ -1,0 +1,28 @@
+<!-- title: How to track Uniswap v4 LP positions on Robinhood Chain | desc: See every Uniswap v3 and v4 liquidity position a wallet holds on Robinhood Chain: current value, unclaimed fees and whether it's in range. Free, read-only, no sign-up. -->
+<h1>How to track Uniswap v4 LP positions on Robinhood Chain</h1>
+<p class="lead">Uniswap v4 positions are harder to find than v3 ones. The v4 PositionManager can't list the NFTs a wallet owns, and fees are held in the PoolManager rather than in the position. Here's how to see all of them, with value, unclaimed fees and range, in one place.</p>
+<a class="cta" href="../dashboard/?ref=learn-v4">Open the free dashboard</a>
+
+<h2>The quick way</h2>
+<ol>
+<li>Open the <a href="../dashboard/?ref=learn-v4">LP PnL dashboard</a>. It runs in your browser, with no account and no wallet connection.</li>
+<li>Paste the wallet address (0x…).</li>
+<li>The dashboard reads Uniswap v3 on Robinhood Chain, Base and Arbitrum, and Uniswap v4 on Robinhood Chain. Each open position shows its value, unclaimed fees, and whether it's in range.</li>
+</ol>
+<p>It only reads from the chain. It never asks for a signature and can't move anything.</p>
+
+<h2>Why v4 positions are harder to find</h2>
+<table>
+<tr><th></th><th>Uniswap v3</th><th>Uniswap v4</th></tr>
+<tr><td>Finding a wallet's positions</td><td><code>balanceOf</code> + <code>tokenOfOwnerByIndex</code> on the NonfungiblePositionManager</td><td>no enumeration: replay the PositionManager's <code>Transfer</code> events to and from the wallet</td></tr>
+<tr><td>Range and pool</td><td><code>positions(tokenId)</code></td><td><code>getPoolAndPositionInfo(tokenId)</code>; the ticks are packed into one word</td></tr>
+<tr><td>Unclaimed fees</td><td>a static <code>collect</code> call</td><td>fee growth inside the range from the StateView contract, minus the position's last checkpoint, times its liquidity</td></tr>
+<tr><td>Native ETH</td><td>always WETH</td><td>pools can hold native ETH (currency 0x000…0)</td></tr>
+</table>
+<p>The dashboard does all of this for you. On Robinhood Chain the public RPC accepts log queries over large block ranges, so scanning a wallet's history takes seconds. Free tiers of some RPC providers cap log queries at 10 blocks, which makes the same scan impractical.</p>
+
+<h2>Out-of-range alerts</h2>
+<p>A position out of range earns nothing. Dashboard Pro adds Telegram alerts: send <code>/watch 0x…</code> to the shop bot and you get a message when a position leaves its range or comes back. You can <a href="../?ref=learn-v4#faq">try Pro free for 7 days</a>.</p>
+
+<div class="note">The dashboard is open source (<code>pnl-dashboard/</code> in the repo). The v4 reader is <code>src/sources/univ4.ts</code>. It was checked against live Robinhood Chain positions, for example a GLD/USDG v4 position worth about $10,187 with $42.43 in unclaimed fees.</div>
+<a class="cta" href="../dashboard/?ref=learn-v4">Track your positions</a>
