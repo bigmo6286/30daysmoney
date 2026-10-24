@@ -57,6 +57,31 @@ export interface ShopDeps {
 const GUIDE_TAG = /\{\{GUIDE_URL:([a-z0-9-]{1,40})\}\}/g;
 const STORE_TAG = /\{\{STORE_URL\}\}/g;
 
+/**
+ * The bot's Telegram profile: the "/" command menu, the description shown before someone presses
+ * Start, and the short one on its profile and in search. tick.ts sets it whenever it changes.
+ */
+export function botProfile(o: { trial: boolean; watches: boolean; affiliate?: number }) {
+  const commands = [
+    { command: "buy", description: "Products and prices" },
+    { command: "status", description: "Your orders and license keys" },
+    ...(o.trial ? [{ command: "trial", description: "Dashboard Pro free for 7 days" }] : []),
+    ...(o.watches ? [{ command: "watch", description: "Alerts when an LP position leaves its range (Pro)" }] : []),
+    ...(o.affiliate !== undefined ? [{ command: "invite", description: `Earn ${o.affiliate}% of every sale you bring` }] : []),
+  ];
+  const description = [
+    "Checkout for 30daysmoney: LP tools for Uniswap v3/v4 (Robinhood Chain, Base, Arbitrum) and Meteora DLMM.",
+    "",
+    "• LP Bot Pro and DLMM Agent Pro: Telegram bots that run on your own machine with your keys",
+    "• LP PnL Dashboard Pro: 20 wallets, history, CSV, range alerts" + (o.trial ? " (/trial: 7 days free)" : ""),
+    "• Flash-loan arbitrage guide",
+    "",
+    "Pay in USDC on Base or Solana; your key arrives in this chat.",
+  ].join("\n");
+  const shortDescription = `LP bots + PnL dashboard for Uniswap v3/v4 and Meteora. Pay in USDC.${o.trial ? " Pro dashboard free for 7 days." : ""}`;
+  return { commands, description, shortDescription };
+}
+
 /** Products whose delivery needs a guide key (or the store's address) can only be sold when it's configured. */
 export const sellable = (products: Product[], guideConfigured: boolean, storeConfigured = true) =>
   products.filter((p) => (guideConfigured || !/\{\{GUIDE_URL:/.test(p.deliver)) && (storeConfigured || !/\{\{STORE_URL\}\}/.test(p.deliver)));

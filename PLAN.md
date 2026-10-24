@@ -99,4 +99,18 @@ Week 1: first sale · Week 2: $500 · Week 3: $1,200 · Week 4: $2,000
   - Some private market makers refuse to trade inside a flash transaction, so the tool routes around them.
   - On Solana a wallet holding the loan token would quietly pay for a losing route, so `--exec` refuses to run while the wallet holds any.
 
+- Also on day 2:
+  - range alerts (`/watch`), the free 7-day trial, `/stats`;
+  - link previews, the share card, store links tagged by source;
+  - the affiliate program (`/invite`, 20%);
+  - search guides (`/learn/`) and the sitemap;
+  - outreach and listing checklists (`launch/AFFILIATES.md`, `launch/FINDABLE.md`).
+
+### Day 8 (2026-10-24): checkpoint
+- **Revenue: $0.** Checked on-chain: both receiving addresses hold 0 USDC. Week 1's target was the first sale.
+- **The shop is healthy.** 1,974 scheduled runs by this morning, all successful, so it has been ready to take payments the whole time.
+- **Distribution hasn't started yet.** No launch posts or affiliate DMs have gone out. The repo has no description or topics, and the sitemap isn't submitted to Google. Every remaining step is in `launch/LAUNCH.md`, `launch/AFFILIATES.md` and `launch/FINDABLE.md`.
+- The shop bot now sets its own Telegram command menu and descriptions.
+- Weeks 2–4 need ~$2,000 from ~3 weeks of distribution. Roughly 20 bot licenses or 130 dashboard months; realistically a mix. That only happens if posting starts now.
+
 **Still needed (owner):** a burner wallet with a little ETH on Robinhood Chain for the first live (non-paper) run; a second Telegram bot for the shop, and the GitHub secrets/variables in checkout/README.md#serverless-shop (USDC on Base goes to 0x51F0…67A7). A Telegram bot (@thirtydaysmoney_bot) and the RPC are in place.
