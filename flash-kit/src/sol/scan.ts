@@ -15,7 +15,7 @@ import { Jupiter } from "./jupiter";
 import { findRoute, fmtUnits, quoteRoundTrip } from "./arb";
 import { solanaRpc, solKeypair } from "./cli";
 
-/** Liquid but not top-tier tokens: where a gap between venues can still appear. */
+/** Fallback when Jupiter's token list can't be read: liquid tokens that trade on several venues. */
 export const MIDS: Record<string, string> = {
   BONK: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
   WIF: "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
@@ -26,6 +26,52 @@ export const MIDS: Record<string, string> = {
   ORCA: "orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE",
   POPCAT: "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr",
 };
+const BATCH = 8;
+const MIN_LIQUIDITY_USD = 200_000;
+const SKIP = /^(USDC|USDT|USDG|PYUSD|USDS|USDE|USD1|FDUSD|DAI|SOL|WSOL)$/i;
+
+interface ListedToken {
+  id: string;
+  symbol: string;
+  isVerified?: boolean;
+  tokenProgram?: string;
+  liquidity?: number;
+  usdPrice?: number;
+}
+
+/**
+ * The tokens worth scanning right now: Jupiter's most-traded (last 24h and last hour), verified,
+ * on the classic token program (Token-2022 mints can carry transfer fees), with real liquidity,
+ * and not stablecoins or SOL itself.
+ */
+export function pickMids(lists: ListedToken[][]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const t of lists.flat()) {
+    if (!t?.id || !t.isVerified || !t.tokenProgram?.startsWith("Tokenkeg") || (t.liquidity ?? 0) < MIN_LIQUIDITY_USD) continue;
+    if (SKIP.test(t.symbol) || (t.usdPrice !== undefined && Math.abs(t.usdPrice - 1) < 0.02)) continue;
+    if (!Object.values(out).includes(t.id)) out[t.symbol in out ? `${t.symbol}·${t.id.slice(0, 4)}` : t.symbol] = t.id;
+  }
+  return out;
+}
+
+export async function fetchMids(env: NodeJS.ProcessEnv): Promise<Record<string, string>> {
+  const key = (env.JUPITER_API_KEY || "").trim();
+  const base = key ? "https://api.jup.ag/tokens/v2" : "https://lite-api.jup.ag/tokens/v2";
+  const get = (path: string) =>
+    fetch(`${base}${path}`, { headers: key ? { "x-api-key": key } : {}, signal: AbortSignal.timeout(15_000) }).then((r) => (r.ok ? (r.json() as Promise<ListedToken[]>) : []));
+  const lists = await Promise.all([get("/toptraded/24h?limit=100"), get("/toptraded/1h?limit=100")]).catch(() => []);
+  const mids = pickMids(lists.filter(Array.isArray));
+  return Object.keys(mids).length >= BATCH ? mids : MIDS;
+}
+
+/** This run's slice: rotates every 5 minutes, so the whole list is covered every few runs. */
+export function batchFor(mids: Record<string, string>, now: number, size = BATCH): [string, string][] {
+  const all = Object.entries(mids).sort((a, b) => (a[1] < b[1] ? -1 : 1));
+  const batches = Math.max(1, Math.ceil(all.length / size));
+  const i = Math.floor(now / 300_000) % batches;
+  return all.slice(i * size, i * size + size);
+}
+
 const SIZES_USDC = [200n, 2_000n];
 /** Kamino's flash fee measured on mainnet is 0.001%; quotes use 2× as a margin */
 const FEE_PPM = 20n;
@@ -78,9 +124,12 @@ export async function scanOnce(env: NodeJS.ProcessEnv = process.env): Promise<Pa
     return pass;
   }
   const jup = new Jupiter(env.JUPITER_API_KEY || "");
+  const mids = await fetchMids(env);
+  const batch = batchFor(mids, started);
+  pass.notes.push(`batch: ${batch.map(([s]) => s).join(", ")} (of ${Object.keys(mids).length})`);
   const minProfit = BigInt(Math.round(Number(env.ARB_MIN_PROFIT || "0.05") * 10 ** r.decimals));
   const dry = env.DRY_RUN === "1";
-  for (const [sym, mid] of Object.entries(MIDS)) {
+  for (const [sym, mid] of batch) {
     for (const size of SIZES_USDC) {
       if (Date.now() - started > BUDGET_MS) {
         pass.notes.push("time budget used up");
