@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { marketAuthority, type Reserve } from "../../src/sol/kamino";
-import { batchFor, MIDS, pickMids, preflight } from "../../src/sol/scan";
+import { batchFor, MIDS, payoutTarget, pickMids, preflight, sweepInstructions } from "../../src/sol/scan";
+import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 
 const market = new PublicKey("7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF");
 const r: Reserve = { address: Keypair.generate().publicKey, market, mint: new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"), supplyVault: Keypair.generate().publicKey, feeVault: Keypair.generate().publicKey, marketAuthority: marketAuthority(market), tokenProgram: TOKEN_PROGRAM_ID, decimals: 6 };
@@ -42,5 +43,27 @@ describe("scan preflight", () => {
     }
     expect(seen.size).toBe(20);
     expect(batchFor(mids, 3 * 300_000)).toEqual(batchFor(mids, 0)); // wraps around
+  });
+
+  it("payout address: optional, must be a Solana address, and not the bot wallet", () => {
+    const me = Keypair.generate().publicKey;
+    const main = Keypair.generate().publicKey;
+    expect(payoutTarget({}, me)).toBeNull();
+    expect(payoutTarget({ ARB_PAYOUT_ADDRESS: ` ${main.toBase58()} ` }, me)!.equals(main)).toBe(true);
+    expect(() => payoutTarget({ ARB_PAYOUT_ADDRESS: "0x51F0373A68B2Fa2aa61b41AeF13d5B74Aa1967A7" }, me)).toThrow(/Solana wallet, not 0x/);
+    expect(() => payoutTarget({ ARB_PAYOUT_ADDRESS: me.toBase58() }, me)).toThrow(/bot wallet itself/);
+  });
+
+  it("sweep: creates the payout wallet's USDC account if needed, then moves the whole amount, signed by the bot only", () => {
+    const me = Keypair.generate().publicKey;
+    const main = Keypair.generate().publicKey;
+    const [create, transfer] = sweepInstructions(r, me, main, 1_234_567n);
+    const dst = getAssociatedTokenAddressSync(r.mint, main, true);
+    expect(create!.keys.some((k) => k.pubkey.equals(dst))).toBe(true);
+    expect(transfer!.keys[0]!.pubkey.equals(getAssociatedTokenAddressSync(r.mint, me, true))).toBe(true);
+    expect(transfer!.keys[2]!.pubkey.equals(dst)).toBe(true);
+    expect(transfer!.data.readBigUInt64LE(1)).toBe(1_234_567n);
+    expect(transfer!.data[9]).toBe(6);
+    expect(transfer!.keys.filter((k) => k.isSigner).map((k) => k.pubkey.toBase58())).toEqual([me.toBase58()]);
   });
 });
