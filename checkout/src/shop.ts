@@ -44,6 +44,8 @@ export interface ShopDeps {
   watches?: Watches;
   /** affiliate program: commission % of each referred sale, and the shop bot's username for /invite links; off when absent */
   affiliate?: { pct: number; botName: string };
+  /** flash-arb scan results per UTC day (written by flash-kit's scan), for the owner's /bot */
+  arbStats?: () => ArbDay[];
   /** the seller's Telegram id: only this chat gets /stats */
   ownerId?: number;
   /** revenue target shown in /stats */
@@ -97,6 +99,43 @@ const PRO_PRODUCTS = ["pnl-pro", "pnl-lifetime", "lp-bot", "lp-bot-setup", "dlmm
 
 const CHAIN_NAME: Record<Chain, string> = { solana: "Solana", base: "Base" };
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+/** one UTC day of flash-kit scan results (flash-kit/src/sol/scan.ts DayStats) */
+export interface ArbDay {
+  day: string;
+  runs: number;
+  quotes: number;
+  candidates: number;
+  sent: number;
+  profit: number;
+  paidOut: number;
+  best?: { usd: number; sym: string };
+  errors: number;
+  lastAt: number;
+  lastNote?: string;
+  sol?: number;
+}
+
+/** The owner's /bot report: today in full, earlier days in one line each. */
+export function arbReport(days: ArbDay[], now = Date.now()): string {
+  if (!days.length) return "🤖 The flash-arb bot hasn't reported yet. It runs every 5 minutes once ARB_ENABLED is true.";
+  const sorted = [...days].sort((a, b) => b.day.localeCompare(a.day));
+  const d = sorted[0]!;
+  const ago = Math.round((now - d.lastAt) / 60_000);
+  const money = (n: number) => `$${n.toFixed(2)}`;
+  const lines = [
+    `🤖 <b>Flash-arb bot</b> · ${d.day}${d.day === new Date(now).toISOString().slice(0, 10) ? " (today)" : ""}`,
+    `Last run: ${ago <= 1 ? "just now" : `${ago} min ago`}${ago > 20 ? " ⚠️ (runs every 5 min: check GitHub Actions)" : ""}`,
+    `Runs ${d.runs} · price checks ${d.quotes} · looked profitable ${d.candidates} · trades ${d.sent}`,
+    `Profit ${money(d.profit)} · paid out ${money(d.paidOut)}`,
+    d.best ? `Closest call: ${d.best.usd >= 0 ? "+" : ""}${d.best.usd.toFixed(2)} USDC on ${d.best.sym}` : "",
+    d.sol !== undefined ? `Bot wallet: ${d.sol.toFixed(4)} SOL${d.sol < 0.03 ? " ⚠️ top up soon (stops below 0.02)" : ""}` : "",
+    d.errors ? `Problems today: ${d.errors}${d.lastNote ? `, latest: ${d.lastNote.replace(/&/g, "&amp;").replace(/</g, "&lt;")}` : ""}` : "",
+  ];
+  const earlier = sorted.slice(1, 7).map((x) => `${x.day}: ${x.runs} runs, ${x.sent} trades, ${money(x.profit)}`);
+  const total = days.reduce((a, x) => a + x.profit, 0);
+  return [...lines.filter(Boolean), ...(earlier.length ? ["", "<b>Earlier</b>", ...earlier] : []), "", `Total profit (7 days): ${money(total)}`].join("\n");
+}
+
 const usd2 = (n: number) => `$${n.toFixed(2)}`;
 const usd = (n: number) => `$${n % 1 ? n.toFixed(2) : n}`;
 
@@ -468,6 +507,7 @@ export class Shop {
         return { replies: [{ chatId, text: total ? `✅ Marked ${usd2(total)} to ${arg} as paid.` : `Nothing owed to ${arg}.` }] };
       }
     }
+    if (cmd === "/bot" && this.d.arbStats && this.d.ownerId !== undefined && chatId === this.d.ownerId) return { replies: [{ chatId, text: arbReport(this.d.arbStats()) }] };
     if (cmd === "/stats" && this.d.ownerId !== undefined && chatId === this.d.ownerId) return { replies: [{ chatId, text: this.stats() }] };
     if (cmd === "/start" && arg?.startsWith("buy_")) {
       // buy_<product> or buy_<product>__<ref> (the store page passes its ?ref= through)

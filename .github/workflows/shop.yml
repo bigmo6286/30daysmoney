@@ -112,6 +112,7 @@ jobs:
           DRY_RUN: ${{ vars.ARB_DRY_RUN }}
           JUPITER_API_KEY: ${{ secrets.JUPITER_API_KEY }}
           ARB_PAYOUT_ADDRESS: ${{ vars.ARB_PAYOUT_ADDRESS }}
+          ARB_STATS_FILE: ../checkout/data/arb.json
           ALCHEMY_KEY: ${{ secrets.ALCHEMY_KEY }}
           SHOP_TG_TOKEN: ${{ secrets.SHOP_TG_TOKEN }}
           TG_OWNER_ID: ${{ secrets.TG_OWNER_ID }}
