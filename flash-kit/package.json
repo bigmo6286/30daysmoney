@@ -10,6 +10,7 @@
   },
   "scripts": {
     "cli": "node --env-file-if-exists=.env --import tsx src/cli.ts",
+    "scan": "node --env-file-if-exists=.env --import tsx src/sol/scan.ts",
     "compile": "node --import tsx scripts/compile.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run test/unit",
