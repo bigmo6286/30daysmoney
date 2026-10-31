@@ -93,6 +93,7 @@ The shop workflow runs it every 5 minutes when these are set:
 | variable `ARB_ENABLED` | `true` to switch it on |
 | variable `ARB_MIN_PROFIT` | optional; minimum USDC profit per trade, default `0.05` |
 | variable `ARB_DRY_RUN` | optional; `1` simulates and logs but never sends |
+| variable `ARB_PAYOUT_ADDRESS` | optional, recommended; a **different** Solana wallet that receives all of the bot wallet's USDC after each profitable trade, and any USDC found at the start of a run. Profits never sit next to the key on the runner, and the no-USDC rule never stops the scan. The first payout creates that wallet's USDC account (~0.002 SOL rent, paid by the bot wallet). |
 
 A pass also refuses to run when:
 - the wallet holds less than 0.02 SOL;

@@ -7,9 +7,12 @@
  * Refuses to run when the key doesn't match SOL_ADDRESS, when the wallet holds any USDC (a losing
  * route would be paid from it instead of failing), or when it's low on SOL for fees.
  * DRY_RUN=1 simulates but never sends. A Telegram message goes to the owner only for a send.
+ * ARB_PAYOUT_ADDRESS (a different Solana wallet) receives all of the bot wallet's USDC after
+ * each profitable send, and any USDC left over at the start of a pass, so profits never sit in the
+ * wallet whose key is on the runner, and the no-USDC rule never stops the scanner.
  */
-import { Connection, PublicKey } from "@solana/web3.js";
-import { getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { Connection, PublicKey, Transaction, type Keypair, type TransactionInstruction } from "@solana/web3.js";
+import { createAssociatedTokenAccountIdempotentInstruction, createTransferCheckedInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { loadReserve, type Reserve } from "./kamino";
 import { Jupiter } from "./jupiter";
 import { findRoute, fmtUnits, quoteRoundTrip } from "./arb";
@@ -112,12 +115,64 @@ export async function preflight(conn: Connection, r: Reserve, payer: PublicKey, 
   return null;
 }
 
+/** The payout wallet from ARB_PAYOUT_ADDRESS: must be a valid Solana address other than the bot's own. */
+export function payoutTarget(env: NodeJS.ProcessEnv, self: PublicKey): PublicKey | null {
+  const raw = (env.ARB_PAYOUT_ADDRESS || "").trim();
+  if (!raw) return null;
+  let to: PublicKey;
+  try {
+    to = new PublicKey(raw);
+  } catch {
+    throw new Error("ARB_PAYOUT_ADDRESS isn't a Solana address (it must be a Solana wallet, not 0x…)");
+  }
+  if (to.equals(self)) throw new Error("ARB_PAYOUT_ADDRESS is the bot wallet itself: use a different wallet");
+  return to;
+}
+
+/** Create the payout wallet's USDC account if missing, then move `amount` there. */
+export function sweepInstructions(r: Reserve, from: PublicKey, to: PublicKey, amount: bigint): TransactionInstruction[] {
+  const src = getAssociatedTokenAddressSync(r.mint, from, true, r.tokenProgram);
+  const dst = getAssociatedTokenAddressSync(r.mint, to, true, r.tokenProgram);
+  return [
+    createAssociatedTokenAccountIdempotentInstruction(from, dst, to, r.mint, r.tokenProgram),
+    createTransferCheckedInstruction(src, r.mint, dst, from, amount, r.decimals, [], r.tokenProgram),
+  ];
+}
+
+/** Send the bot wallet's whole USDC balance to the payout wallet. Returns the amount and signature, or null if there was none. */
+export async function sweep(conn: Connection, kp: Keypair, r: Reserve, to: PublicKey): Promise<{ amount: bigint; sig: string } | null> {
+  const src = getAssociatedTokenAddressSync(r.mint, kp.publicKey, true, r.tokenProgram);
+  const amount = await conn.getTokenAccountBalance(src).then((b) => BigInt(b.value.amount)).catch(() => 0n);
+  if (amount === 0n) return null;
+  const tx = new Transaction().add(...sweepInstructions(r, kp.publicKey, to, amount));
+  tx.feePayer = kp.publicKey;
+  tx.recentBlockhash = (await conn.getLatestBlockhash("confirmed")).blockhash;
+  tx.sign(kp);
+  const sig = await conn.sendRawTransaction(tx.serialize(), { maxRetries: 3 });
+  const res = await conn.confirmTransaction(sig, "confirmed");
+  if (res.value.err) throw new Error(`payout ${sig} failed: ${JSON.stringify(res.value.err)}`);
+  return { amount, sig };
+}
+
 export async function scanOnce(env: NodeJS.ProcessEnv = process.env): Promise<Pass> {
   const started = Date.now();
   const conn = new Connection(solanaRpc(env), "confirmed");
   const kp = solKeypair(env);
   const r = await loadReserve(conn, "USDC");
   const pass: Pass = { checked: 0, candidates: 0, sent: [], notes: [] };
+  const payout = payoutTarget(env, kp.publicKey);
+  const payOut = async (why: string) => {
+    if (!payout || env.DRY_RUN === "1") return;
+    try {
+      const p = await sweep(conn, kp, r, payout);
+      if (!p) return;
+      pass.notes.push(`paid out ${fmtUnits(p.amount, r.decimals)} USDC to ${payout.toBase58()} (${why}): ${p.sig}`);
+      await notify(`📤 Sent ${fmtUnits(p.amount, r.decimals)} USDC to your payout wallet (${why})\nhttps://solscan.io/tx/${p.sig}`, env);
+    } catch (e) {
+      pass.notes.push(`payout failed (${why}): ${(e as Error).message.slice(0, 160)}`);
+    }
+  };
+  await payOut("left in the bot wallet");
   const stop = await preflight(conn, r, kp.publicKey, (env.SOL_ADDRESS || "").trim());
   if (stop) {
     pass.notes.push(stop);
@@ -161,6 +216,7 @@ export async function scanOnce(env: NodeJS.ProcessEnv = process.env): Promise<Pa
         const profit = fmtUnits(found.built.delta!, 6);
         pass.sent.push({ sig, profit, route });
         await notify(`💰 Flash arb: +${profit} USDC (simulated) via ${sym}, ${size} USDC borrowed\n${route}\nhttps://solscan.io/tx/${sig}`, env);
+        await payOut("profit");
       } catch (e) {
         pass.notes.push(`${sym} ${size}: ${(e as Error).message.slice(0, 160)}`);
       }
