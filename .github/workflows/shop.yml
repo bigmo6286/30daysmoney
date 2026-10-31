@@ -61,6 +61,7 @@ jobs:
           cache-dependency-path: |
             checkout/package-lock.json
             pnl-dashboard/package-lock.json
+            flash-kit/package-lock.json
       - run: npm ci
       - uses: actions/cache/restore@v4
         with:
@@ -97,6 +98,21 @@ jobs:
           SHOP_TG_TOKEN: ${{ secrets.SHOP_TG_TOKEN }}
           ALCHEMY_KEY: ${{ secrets.ALCHEMY_KEY }}
           STORE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+      # flash-loan arbitrage scan (flash-kit, Solana): off unless the repo variable ARB_ENABLED is
+      # "true"; sends only routes that simulate at a profit; never blocks saving the shop state
+      - if: always() && steps.unpack.outcome == 'success' && vars.ARB_ENABLED == 'true'
+        continue-on-error: true
+        timeout-minutes: 3
+        working-directory: flash-kit
+        run: npm ci --no-audit --no-fund && npm run -s scan
+        env:
+          SOL_PRIVATE_KEY: ${{ secrets.SOL_PRIVATE_KEY }}
+          SOL_ADDRESS: ${{ vars.SOL_ADDRESS }}
+          ARB_MIN_PROFIT: ${{ vars.ARB_MIN_PROFIT }}
+          DRY_RUN: ${{ vars.ARB_DRY_RUN }}
+          ALCHEMY_KEY: ${{ secrets.ALCHEMY_KEY }}
+          SHOP_TG_TOKEN: ${{ secrets.SHOP_TG_TOKEN }}
+          TG_OWNER_ID: ${{ secrets.TG_OWNER_ID }}
       # save even if the tick failed halfway (it records progress as it goes), but never after a
       # failed unpack: that would replace the real orders with an empty book
       - if: always() && steps.unpack.outcome == 'success'

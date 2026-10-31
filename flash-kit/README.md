@@ -75,6 +75,28 @@ So `--exec` refuses to run while the wallet holds any of the loan token. With an
   - The route it found (BisonFi → GoonFi V2) fit in 1,085 bytes and ~310k CU.
 - A 1,000 USDC round trip through SOL quotes at about −$3, as expected on a liquid pair. Use it on long-tail tokens.
 
+### Unattended scan (GitHub Actions)
+
+`npm run scan` makes one pass. It borrows USDC from Kamino and round-trips it through BONK, WIF, JUP, JTO, PYTH, RAY, ORCA and POPCAT on Jupiter, at 200 and 2,000 USDC. It sends only a route whose full simulation from your wallet clears `ARB_MIN_PROFIT`, and messages the owner on Telegram for each send.
+
+The shop workflow runs it every 5 minutes when these are set:
+
+| repo setting | value |
+|---|---|
+| secret `SOL_PRIVATE_KEY` | the key of a **fresh** wallet that holds only a little SOL for fees |
+| variable `SOL_ADDRESS` | that wallet's public address. The scan refuses to run if the key doesn't match. |
+| variable `ARB_ENABLED` | `true` to switch it on |
+| variable `ARB_MIN_PROFIT` | optional; minimum USDC profit per trade, default `0.05` |
+| variable `ARB_DRY_RUN` | optional; `1` simulates and logs but never sends |
+
+A pass also refuses to run when:
+- the wallet holds less than 0.02 SOL;
+- the wallet holds any USDC. A losing route would be paid from that balance instead of failing.
+
+On first use, Jupiter's setup instructions create token accounts. That costs about 0.002 SOL of rent each, which you can get back by closing them.
+
+Live check (Oct 31): all eight tokens quote fine. Every 200 USDC round trip loses $0.63–$1.68 (0.3–0.8%), so the scan idles until a real gap appears. Treat it as a lottery ticket.
+
 ## Tests
 
 ```bash
