@@ -95,6 +95,14 @@ The shop workflow runs it every 5 minutes when these are set:
 | variable `ARB_DRY_RUN` | optional; `1` simulates and logs but never sends |
 | variable `ARB_PAYOUT_ADDRESS` | optional, recommended; a **different** Solana wallet that receives all of the bot wallet's USDC after each profitable trade, and any USDC found at the start of a run. Profits never sit next to the key on the runner, and the no-USDC rule never stops the scan. The first payout creates that wallet's USDC account (~0.002 SOL rent, paid by the bot wallet). |
 
+Each pass also adds its numbers to a per-day summary (`ARB_STATS_FILE`, kept in the shop's encrypted state). The owner sends **`/bot`** to the shop bot to see:
+- today's runs, price checks, near-misses and trades;
+- profit and payouts;
+- the closest call;
+- the wallet's SOL, flagged when it's time to top up;
+- the latest problem;
+- one line for each of the last 7 days.
+
 A pass also refuses to run when:
 - the wallet holds less than 0.02 SOL;
 - the wallet holds any USDC. A losing route would be paid from that balance instead of failing.

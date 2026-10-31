@@ -62,6 +62,7 @@ async function main() {
   const receivers = { ...(cfg.solReceiver ? { solana: cfg.solReceiver } : {}), ...(cfg.baseReceiver ? { base: cfg.baseReceiver } : {}) };
   const shop = new Shop({ book, products, receivers, contact: cfg.contact, checkEveryMin, guide, storeUrl: storeUrl || undefined,
     watches: new Watches(cfg.dataDir),
+    arbStats: () => readJson(path.join(cfg.dataDir, "arb.json"), []),
     // affiliates earn REF_PCT% (default 20) of sales through their /invite link; needs the shop bot's username
     affiliate: shopBot ? { pct: refPct(e.REF_PCT), botName: shopBot } : undefined,
     // buying during the trial adds on to it (issueFor counts trial keys as the buyer's earlier keys)

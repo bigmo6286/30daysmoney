@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { OrderBook } from "../src/orders";
 import { DEFAULT_PRODUCTS } from "../src/config";
-import { botProfile, chatOf, Shop, tgContact, type Update } from "../src/shop";
+import { arbReport, botProfile, chatOf, Shop, tgContact, type Update } from "../src/shop";
 import { open, packDir, seal, stateKey, unpackDir } from "../src/statebox";
 import { learnMeta, renderLearn, renderStore, sitemap } from "../src/site";
 import { Watches } from "../src/watches";
@@ -413,5 +413,25 @@ describe("subscriptions", () => {
     // /buy shows the product menu
     const s = new Shop({ book: new OrderBook(tmp()), products: DEFAULT_PRODUCTS, receivers: { base: BASE }, contact: "", checkEveryMin: 5 });
     expect(s.handle(msg("/buy", 60)).replies[0]!.buttons!.length).toBe(DEFAULT_PRODUCTS.length);
+  });
+
+  it("/bot: owner only; today's numbers, closest call, low-SOL and stale-run warnings, earlier days", () => {
+    const now = Date.UTC(2026, 10, 1, 12);
+    const day = (d: string, o: object = {}) => ({ day: d, runs: 100, quotes: 1600, candidates: 2, sent: 0, profit: 0, paidOut: 0, errors: 0, lastAt: now - 3 * 60_000, ...o });
+    const days = [day("2026-10-31", { sent: 1, profit: 0.12 }), day("2026-11-01", { best: { usd: -0.21, sym: "WIF 200" }, sol: 0.025, errors: 1, lastNote: "x<y" })];
+    const t = arbReport(days, now);
+    expect(t).toContain("2026-11-01 (today)");
+    expect(t).toContain("Last run: 3 min ago");
+    expect(t).toContain("Runs 100 · price checks 1600 · looked profitable 2 · trades 0");
+    expect(t).toContain("Closest call: -0.21 USDC on WIF 200");
+    expect(t).toContain("0.0250 SOL ⚠️ top up soon");
+    expect(t).toContain("latest: x&lt;y");
+    expect(t).toContain("2026-10-31: 100 runs, 1 trades, $0.12");
+    expect(t).toContain("Total profit (7 days): $0.12");
+    expect(arbReport([day("2026-11-01", { lastAt: now - 60 * 60_000 })], now)).toContain("⚠️ (runs every 5 min");
+    expect(arbReport([], now)).toContain("hasn't reported yet");
+    const s = new Shop({ book: new OrderBook(tmp()), products: DEFAULT_PRODUCTS, receivers: { base: BASE }, contact: "", checkEveryMin: 5, ownerId: 1, arbStats: () => days });
+    expect(s.handle(msg("/bot", 1)).replies[0]!.text).toContain("Flash-arb bot");
+    expect(s.handle(msg("/bot", 2)).replies[0]!.text).not.toContain("Flash-arb bot");
   });
 });

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { marketAuthority, type Reserve } from "../../src/sol/kamino";
-import { batchFor, MIDS, payoutTarget, pickMids, preflight, sweepInstructions } from "../../src/sol/scan";
+import { batchFor, MIDS, payoutTarget, pickMids, preflight, recordPass, sweepInstructions } from "../../src/sol/scan";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 
 const market = new PublicKey("7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF");
@@ -65,5 +65,20 @@ describe("scan preflight", () => {
     expect(transfer!.data.readBigUInt64LE(1)).toBe(1_234_567n);
     expect(transfer!.data[9]).toBe(6);
     expect(transfer!.keys.filter((k) => k.isSigner).map((k) => k.pubkey.toBase58())).toEqual([me.toBase58()]);
+  });
+
+  it("stats: one row per UTC day, totals add up, keeps the closest call and last problem, 7 days max", () => {
+    const T = Date.UTC(2026, 9, 31, 6);
+    const pass = (o: object) => ({ checked: 16, candidates: 0, sent: [], notes: ["batch: A, B (of 40)"], ...o });
+    let d = recordPass([], pass({ best: { usd: -0.6, sym: "JUP 200" }, sol: 0.09 }), T);
+    d = recordPass(d, pass({ best: { usd: -0.2, sym: "WIF 200" }, candidates: 1, notes: ["batch: x", "WIF 200: quoted 0.1 but simulated -0.3"] }), T + 300_000);
+    d = recordPass(d, pass({ sent: [{ sig: "s", profit: "0.12", route: "r" }], paidOut: 0.12 }), T + 600_000);
+    expect(d).toHaveLength(1);
+    expect(d[0]).toMatchObject({ day: "2026-10-31", runs: 3, quotes: 48, candidates: 1, sent: 1, profit: 0.12, paidOut: 0.12, best: { usd: -0.2, sym: "WIF 200" }, sol: 0.09, lastNote: "WIF 200: quoted 0.1 but simulated -0.3", errors: 0 });
+    d = recordPass(d, pass({ notes: ["wallet has 0.01 SOL; needs at least 0.02 for fees"] }), T + 86_400_000);
+    expect(d.map((x) => x.day)).toEqual(["2026-10-31", "2026-11-01"]);
+    expect(d[1]!.errors).toBe(1);
+    for (let i = 2; i < 12; i++) d = recordPass(d, pass({}), T + i * 86_400_000);
+    expect(d).toHaveLength(7);
   });
 });

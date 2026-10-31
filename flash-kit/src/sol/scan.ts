@@ -11,6 +11,8 @@
  * each profitable send, and any USDC left over at the start of a pass, so profits never sit in the
  * wallet whose key is on the runner, and the no-USDC rule never stops the scanner.
  */
+import fs from "node:fs";
+import path from "node:path";
 import { Connection, PublicKey, Transaction, type Keypair, type TransactionInstruction } from "@solana/web3.js";
 import { createAssociatedTokenAccountIdempotentInstruction, createTransferCheckedInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { loadReserve, type Reserve } from "./kamino";
@@ -88,6 +90,59 @@ export interface Pass {
   candidates: number;
   sent: { sig: string; profit: string; route: string }[];
   notes: string[];
+  /** closest quoted round trip this pass (USDC; negative = a loss), and on which token */
+  best?: { usd: number; sym: string };
+  /** USDC paid out to ARB_PAYOUT_ADDRESS this pass */
+  paidOut?: number;
+  /** wallet SOL at the start of the pass */
+  sol?: number;
+}
+
+/** One UTC day of scan results, kept for the shop bot's /bot command (the last 7 days). */
+export interface DayStats {
+  day: string;
+  runs: number;
+  quotes: number;
+  candidates: number;
+  sent: number;
+  profit: number;
+  paidOut: number;
+  best?: { usd: number; sym: string };
+  errors: number;
+  lastAt: number;
+  lastNote?: string;
+  sol?: number;
+}
+
+/** Fold one pass into the per-day stats (pure; the caller reads and writes the file). */
+export function recordPass(days: DayStats[], p: Pass, now: number): DayStats[] {
+  const day = new Date(now).toISOString().slice(0, 10);
+  const out = days.filter((d) => d.day !== day);
+  const d: DayStats = days.find((x) => x.day === day) ?? { day, runs: 0, quotes: 0, candidates: 0, sent: 0, profit: 0, paidOut: 0, errors: 0, lastAt: 0 };
+  d.runs++;
+  d.quotes += p.checked;
+  d.candidates += p.candidates;
+  d.sent += p.sent.length;
+  d.profit += p.sent.reduce((a, x) => a + Number(x.profit), 0);
+  d.paidOut += p.paidOut ?? 0;
+  if (p.best && (!d.best || p.best.usd > d.best.usd)) d.best = p.best;
+  const problems = p.notes.filter((n) => !n.startsWith("batch:"));
+  d.errors += problems.filter((n) => /fail|error|refus|needs at least|holds|HTTP|429/i.test(n)).length;
+  if (problems.length) d.lastNote = problems.at(-1)!.slice(0, 200);
+  d.lastAt = now;
+  if (p.sol !== undefined) d.sol = p.sol;
+  return [...out, d].sort((a, b) => a.day.localeCompare(b.day)).slice(-7);
+}
+
+function saveStats(file: string, p: Pass, now: number) {
+  let days: DayStats[] = [];
+  try {
+    days = JSON.parse(fs.readFileSync(file, "utf8")) as DayStats[];
+  } catch {
+    /* first run */
+  }
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(recordPass(days, p, now), null, 1));
 }
 
 async function notify(text: string, env: NodeJS.ProcessEnv) {
@@ -166,6 +221,7 @@ export async function scanOnce(env: NodeJS.ProcessEnv = process.env): Promise<Pa
     try {
       const p = await sweep(conn, kp, r, payout);
       if (!p) return;
+      pass.paidOut = (pass.paidOut ?? 0) + Number(p.amount) / 10 ** r.decimals;
       pass.notes.push(`paid out ${fmtUnits(p.amount, r.decimals)} USDC to ${payout.toBase58()} (${why}): ${p.sig}`);
       await notify(`📤 Sent ${fmtUnits(p.amount, r.decimals)} USDC to your payout wallet (${why})\nhttps://solscan.io/tx/${p.sig}`, env);
     } catch (e) {
@@ -174,6 +230,7 @@ export async function scanOnce(env: NodeJS.ProcessEnv = process.env): Promise<Pa
   };
   await payOut("left in the bot wallet");
   const stop = await preflight(conn, r, kp.publicKey, (env.SOL_ADDRESS || "").trim());
+  pass.sol = (await conn.getBalance(kp.publicKey).catch(() => NaN)) / 1e9;
   if (stop) {
     pass.notes.push(stop);
     return pass;
@@ -194,7 +251,10 @@ export async function scanOnce(env: NodeJS.ProcessEnv = process.env): Promise<Pa
       pass.checked++;
       try {
         const trip = await quoteRoundTrip(jup, r.mint.toBase58(), mid, amount, (amount * FEE_PPM) / 1_000_000n, SLIPPAGE_BPS);
-        if (!trip || trip.expected <= minProfit) continue;
+        if (!trip) continue;
+        const usd = Number(trip.expected) / 10 ** r.decimals;
+        if (!pass.best || usd > pass.best.usd) pass.best = { usd: Math.round(usd * 1e4) / 1e4, sym: `${sym} ${size}` };
+        if (trip.expected <= minProfit) continue;
         pass.candidates++;
         const found = await findRoute(conn, jup, r, kp.publicKey, mid, amount, (amount * FEE_PPM) / 1_000_000n, SLIPPAGE_BPS);
         if (!found || !found.built.ok || found.built.delta! <= minProfit) {
@@ -231,9 +291,13 @@ if (process.argv[1]?.endsWith("scan.ts")) {
       console.log(`scan: ${p.checked} quotes, ${p.candidates} candidates, ${p.sent.length} sent`);
       for (const n of p.notes) console.log(`  ${n}`);
       for (const s of p.sent) console.log(`  SENT +${s.profit} USDC ${s.sig}`);
+      const file = (process.env.ARB_STATS_FILE || "").trim();
+      if (file) saveStats(file, p, Date.now());
     })
     .catch((e) => {
       console.error(`scan: ${(e as Error).message}`);
+      const file = (process.env.ARB_STATS_FILE || "").trim();
+      if (file) saveStats(file, { checked: 0, candidates: 0, sent: [], notes: [`error: ${(e as Error).message}`] }, Date.now());
       process.exit(1);
     });
 }
