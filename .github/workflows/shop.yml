@@ -110,6 +110,7 @@ jobs:
           SOL_ADDRESS: ${{ vars.SOL_ADDRESS }}
           ARB_MIN_PROFIT: ${{ vars.ARB_MIN_PROFIT }}
           DRY_RUN: ${{ vars.ARB_DRY_RUN }}
+          JUPITER_API_KEY: ${{ secrets.JUPITER_API_KEY }}
           ALCHEMY_KEY: ${{ secrets.ALCHEMY_KEY }}
           SHOP_TG_TOKEN: ${{ secrets.SHOP_TG_TOKEN }}
           TG_OWNER_ID: ${{ secrets.TG_OWNER_ID }}

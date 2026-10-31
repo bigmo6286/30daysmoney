@@ -77,7 +77,12 @@ So `--exec` refuses to run while the wallet holds any of the loan token. With an
 
 ### Unattended scan (GitHub Actions)
 
-`npm run scan` makes one pass. It borrows USDC from Kamino and round-trips it through BONK, WIF, JUP, JTO, PYTH, RAY, ORCA and POPCAT on Jupiter, at 200 and 2,000 USDC. It sends only a route whose full simulation from your wallet clears `ARB_MIN_PROFIT`, and messages the owner on Telegram for each send.
+`npm run scan` makes one pass. It borrows USDC from Kamino and round-trips it on Jupiter, at 200 and 2,000 USDC, through a batch of 8 tokens.
+- The tokens are Jupiter's most-traded of the last 24 hours and the last hour.
+- They must be verified, on the classic token program, with at least $200k of liquidity, and not a stablecoin or SOL. That gave 42 tokens on Oct 31.
+- The batch rotates every 5 minutes, so the whole list is covered about every 30 minutes.
+- If the list can't be read, the scan falls back to 8 fixed tokens.
+- A `JUPITER_API_KEY` secret moves it to Jupiter's keyed endpoints, which have higher rate limits. It sends only a route whose full simulation from your wallet clears `ARB_MIN_PROFIT`, and messages the owner on Telegram for each send.
 
 The shop workflow runs it every 5 minutes when these are set:
 
