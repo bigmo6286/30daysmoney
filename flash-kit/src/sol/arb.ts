@@ -17,11 +17,17 @@ export interface RoundTrip {
   worst: bigint;
 }
 
+/** what the sell leg holds back from the quoted buy amount, in basis points */
+export const SELL_BUFFER_BPS = 3n;
+
 export async function quoteRoundTrip(jup: Jupiter, loanMint: string, mid: string, amount: bigint, fee: bigint, slippageBps: number, excludeDexes: string[] = []): Promise<RoundTrip | null> {
   const buy = await jup.quote(loanMint, mid, amount, slippageBps, excludeDexes);
   if (!buy) return null;
-  // the sell leg spends what the buy leg is guaranteed to return, so it can't run short
-  const sell = await jup.quote(mid, loanMint, buy.minOut, slippageBps, excludeDexes);
+  // the sell leg spends what the buy leg is quoted to return, less a tiny buffer. (It used to sell
+  // the slippage floor, `minOut`, which priced every round trip ~0.3% worse than it really is, so
+  // no gap was ever seen.) If the buy comes in under this, the sell can't be paid and the whole
+  // flash transaction fails in simulation, before anything is sent.
+  const sell = await jup.quote(mid, loanMint, buy.outAmount - (buy.outAmount * SELL_BUFFER_BPS) / 10_000n, slippageBps, excludeDexes);
   if (!sell) return null;
   return { amount, buy, sell, expected: sell.outAmount - amount - fee, worst: sell.minOut - amount - fee };
 }
