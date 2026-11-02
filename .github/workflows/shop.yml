@@ -109,6 +109,7 @@ jobs:
           SOL_PRIVATE_KEY: ${{ secrets.SOL_PRIVATE_KEY }}
           SOL_ADDRESS: ${{ vars.SOL_ADDRESS }}
           ARB_MIN_PROFIT: ${{ vars.ARB_MIN_PROFIT }}
+          ARB_CONCURRENCY: ${{ vars.ARB_CONCURRENCY }}
           DRY_RUN: ${{ vars.ARB_DRY_RUN }}
           JUPITER_API_KEY: ${{ secrets.JUPITER_API_KEY }}
           ARB_PAYOUT_ADDRESS: ${{ vars.ARB_PAYOUT_ADDRESS }}

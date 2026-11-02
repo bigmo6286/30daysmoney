@@ -77,11 +77,15 @@ So `--exec` refuses to run while the wallet holds any of the loan token. With an
 
 ### Unattended scan (GitHub Actions)
 
-`npm run scan` makes one pass. It borrows USDC from Kamino and round-trips it on Jupiter, at 200 and 2,000 USDC, through a batch of 8 tokens.
+`npm run scan` makes one pass. It borrows from Kamino and round-trips the loan on Jupiter through each token. It borrows **USDC** (300 and 2,000) and **SOL** (2 and 12).
 - The tokens are Jupiter's most-traded of the last 24 hours and the last hour.
 - They must be verified, on the classic token program, with at least $200k of liquidity, and not a stablecoin or SOL. That gave 42 tokens on Oct 31.
-- Each run starts at a rotating batch and **keeps cycling through the whole list for about 3⅓ minutes**. Gaps last seconds, so more looks per run matters most.
+- **Movers first.** Each token is scored by |5-minute % change| + ¼ × |1-hour % change|, from Jupiter's token stats. Gaps open when prices move fast. Every cycle checks the 8 fastest movers, then the next rotating batch of 8 from the rest.
+- A pass **keeps cycling for about 3⅓ minutes**, so the movers get several looks per run. Gaps last seconds, so more looks per run matters most.
+- Price checks run **3 at a time** (`ARB_CONCURRENCY`, max 6). Building, simulating and sending a candidate happens one at a time.
 - The sell leg is priced on the buy leg's *quoted* output, less a 0.03% buffer. Until Nov 2 it was priced on the slippage floor, which made every round trip look ~0.3% worse than it was, so the scan could never see a gap. Measured that day: most round trips lose only 0.003–0.05%, and ZEC at $2,000 showed +0.023% (≈ +$0.46).
+- **Priority fee.** A route that clears the bar is rebuilt with a priority fee worth 25% of its simulated profit, capped at 0.002 SOL, and sized to the simulated compute units plus 15%. It must still clear `ARB_MIN_PROFIT` after that fee, or it isn't sent. That buys a better place in the block when other bots chase the same gap.
+- SOL-loan amounts are converted to dollars at a live Jupiter SOL price. If that price can't be read, the pass skips SOL loans.
 - If the list can't be read, the scan falls back to 8 fixed tokens.
 - A `JUPITER_API_KEY` secret moves it to Jupiter's keyed endpoints, which have higher rate limits. It sends only a route whose full simulation from your wallet clears `ARB_MIN_PROFIT`, and messages the owner on Telegram for each send.
 
@@ -92,9 +96,10 @@ The shop workflow runs it every 5 minutes when these are set:
 | secret `SOL_PRIVATE_KEY` | the key of a **fresh** wallet that holds only a little SOL for fees |
 | variable `SOL_ADDRESS` | that wallet's public address. The scan refuses to run if the key doesn't match. |
 | variable `ARB_ENABLED` | `true` to switch it on |
-| variable `ARB_MIN_PROFIT` | optional; minimum USDC profit per trade, default `0.05` |
+| variable `ARB_MIN_PROFIT` | optional; minimum profit per trade in dollars, after the priority fee, default `0.05` |
+| variable `ARB_CONCURRENCY` | optional; price checks in flight at once, default `3`, max `6`. Lower it if the logs show rate-limit errors. |
 | variable `ARB_DRY_RUN` | optional; `1` simulates and logs but never sends |
-| variable `ARB_PAYOUT_ADDRESS` | optional, recommended; a **different** Solana wallet that receives all of the bot wallet's USDC after each profitable trade, and any USDC found at the start of a run. Profits never sit next to the key on the runner, and the no-USDC rule never stops the scan. The first payout creates that wallet's USDC account (~0.002 SOL rent, paid by the bot wallet). |
+| variable `ARB_PAYOUT_ADDRESS` | optional, recommended; a **different** Solana wallet that receives all of the bot wallet's USDC and wrapped SOL after each profitable trade, and any found at the start of a run. Profits never sit next to the key on the runner, and the no-USDC rule never stops the scan. The first payout creates that wallet's USDC account (~0.002 SOL rent, paid by the bot wallet). |
 
 Each pass also adds its numbers to a per-day summary (`ARB_STATS_FILE`, kept in the shop's encrypted state). The owner sends **`/bot`** to the shop bot to see:
 - today's runs, price checks, near-misses and trades;
@@ -106,7 +111,7 @@ Each pass also adds its numbers to a per-day summary (`ARB_STATS_FILE`, kept in 
 
 A pass also refuses to run when:
 - the wallet holds less than 0.02 SOL;
-- the wallet holds any USDC. A losing route would be paid from that balance instead of failing.
+- the wallet holds any USDC or wrapped SOL. A losing route would be paid from that balance instead of failing.
 
 On first use, Jupiter's setup instructions create token accounts. That costs about 0.002 SOL of rent each, which you can get back by closing them.
 

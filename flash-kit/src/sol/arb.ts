@@ -38,10 +38,12 @@ export interface Built extends SimResult {
 }
 
 /** Build the whole flash transaction for a round trip and simulate it as the payer. */
-export async function buildAndSimulate(conn: Connection, jup: Jupiter, r: Reserve, payer: PublicKey, trip: RoundTrip, priorityMicroLamports = 0) {
+/** `opts`: a priority fee (micro-lamports per CU) and/or a compute-unit limit for the flash transaction */
+export async function buildAndSimulate(conn: Connection, jup: Jupiter, r: Reserve, payer: PublicKey, trip: RoundTrip, opts: number | { priorityMicroLamports?: number; computeUnits?: number } = 0) {
+  const o = typeof opts === "number" ? { priorityMicroLamports: opts } : opts;
   const a = await jup.instructions(conn, trip.buy, payer);
   const b = await jup.instructions(conn, trip.sell, payer);
-  const plan = { payer, reserve: r, amount: trip.amount, strategy: [...a.instructions, ...b.instructions], lookupTables: [...a.lookupTables, ...b.lookupTables], priorityMicroLamports };
+  const plan = { payer, reserve: r, amount: trip.amount, strategy: [...a.instructions, ...b.instructions], lookupTables: [...a.lookupTables, ...b.lookupTables], priorityMicroLamports: o.priorityMicroLamports ?? 0, computeUnits: o.computeUnits };
   const tx = await flashTransaction(conn, plan);
   let size: number;
   try {
