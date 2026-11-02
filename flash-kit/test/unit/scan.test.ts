@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { marketAuthority, type Reserve } from "../../src/sol/kamino";
-import { batchFor, MIDS, payoutTarget, pickMids, preflight, recordPass, sweepInstructions } from "../../src/sol/scan";
+import { batchFor, rotation, MIDS, payoutTarget, pickMids, preflight, recordPass, sweepInstructions } from "../../src/sol/scan";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 
 const market = new PublicKey("7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF");
@@ -80,5 +80,13 @@ describe("scan preflight", () => {
     expect(d[1]!.errors).toBe(1);
     for (let i = 2; i < 12; i++) d = recordPass(d, pass({}), T + i * 86_400_000);
     expect(d).toHaveLength(7);
+  });
+
+  it("rotation covers the whole list, starting at this run's batch", () => {
+    const mids = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`T${i}`, `m${String(i).padStart(2, "0")}`]));
+    const order = rotation(mids, 300_000);
+    expect(order).toHaveLength(20);
+    expect(order.slice(0, 8)).toEqual(batchFor(mids, 300_000));
+    expect(new Set(order.map(([, m]) => m)).size).toBe(20);
   });
 });

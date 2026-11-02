@@ -80,7 +80,8 @@ So `--exec` refuses to run while the wallet holds any of the loan token. With an
 `npm run scan` makes one pass. It borrows USDC from Kamino and round-trips it on Jupiter, at 200 and 2,000 USDC, through a batch of 8 tokens.
 - The tokens are Jupiter's most-traded of the last 24 hours and the last hour.
 - They must be verified, on the classic token program, with at least $200k of liquidity, and not a stablecoin or SOL. That gave 42 tokens on Oct 31.
-- The batch rotates every 5 minutes, so the whole list is covered about every 30 minutes.
+- Each run starts at a rotating batch and **keeps cycling through the whole list for about 3⅓ minutes**. Gaps last seconds, so more looks per run matters most.
+- The sell leg is priced on the buy leg's *quoted* output, less a 0.03% buffer. Until Nov 2 it was priced on the slippage floor, which made every round trip look ~0.3% worse than it was, so the scan could never see a gap. Measured that day: most round trips lose only 0.003–0.05%, and ZEC at $2,000 showed +0.023% (≈ +$0.46).
 - If the list can't be read, the scan falls back to 8 fixed tokens.
 - A `JUPITER_API_KEY` secret moves it to Jupiter's keyed endpoints, which have higher rate limits. It sends only a route whose full simulation from your wallet clears `ARB_MIN_PROFIT`, and messages the owner on Telegram for each send.
 

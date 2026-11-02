@@ -69,6 +69,14 @@ export async function fetchMids(env: NodeJS.ProcessEnv): Promise<Record<string, 
   return Object.keys(mids).length >= BATCH ? mids : MIDS;
 }
 
+/** The whole list, starting at this run's batch, so a pass that has time keeps going through the rest. */
+export function rotation(mids: Record<string, string>, now: number): [string, string][] {
+  const all = Object.entries(mids).sort((a, b) => (a[1] < b[1] ? -1 : 1));
+  const first = batchFor(mids, now)[0];
+  const i = first ? all.findIndex(([, m]) => m === first[1]) : 0;
+  return [...all.slice(i), ...all.slice(0, i)];
+}
+
 /** This run's slice: rotates every 5 minutes, so the whole list is covered every few runs. */
 export function batchFor(mids: Record<string, string>, now: number, size = BATCH): [string, string][] {
   const all = Object.entries(mids).sort((a, b) => (a[1] < b[1] ? -1 : 1));
@@ -77,13 +85,14 @@ export function batchFor(mids: Record<string, string>, now: number, size = BATCH
   return all.slice(i * size, i * size + size);
 }
 
-const SIZES_USDC = [200n, 2_000n];
+const SIZES_USDC = [300n, 2_000n];
 /** Kamino's flash fee measured on mainnet is 0.001%; quotes use 2× as a margin */
 const FEE_PPM = 20n;
 /** keep enough SOL for fees and the few token accounts Jupiter creates on first use */
 const MIN_SOL_LAMPORTS = 20_000_000;
 const SLIPPAGE_BPS = 30;
-const BUDGET_MS = 150_000;
+/** each pass keeps cycling through the token list for this long (the job runs every 5 minutes) */
+const BUDGET_MS = 200_000;
 
 export interface Pass {
   checked: number;
@@ -241,12 +250,13 @@ export async function scanOnce(env: NodeJS.ProcessEnv = process.env): Promise<Pa
   pass.notes.push(`batch: ${batch.map(([s]) => s).join(", ")} (of ${Object.keys(mids).length})`);
   const minProfit = BigInt(Math.round(Number(env.ARB_MIN_PROFIT || "0.05") * 10 ** r.decimals));
   const dry = env.DRY_RUN === "1";
-  for (const [sym, mid] of batch) {
+  // keep cycling through every token until the time budget is used: gaps last seconds, so more
+  // looks per run is the main lever a 5-minute schedule has
+  const order = rotation(mids, started);
+  for (let i = 0; order.length && Date.now() - started < BUDGET_MS; i++) {
+    const [sym, mid] = order[i % order.length]!;
     for (const size of SIZES_USDC) {
-      if (Date.now() - started > BUDGET_MS) {
-        pass.notes.push("time budget used up");
-        return pass;
-      }
+      if (Date.now() - started > BUDGET_MS) break;
       const amount = size * 10n ** BigInt(r.decimals);
       pass.checked++;
       try {

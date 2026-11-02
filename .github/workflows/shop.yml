@@ -102,7 +102,7 @@ jobs:
       # "true"; sends only routes that simulate at a profit; never blocks saving the shop state
       - if: always() && steps.unpack.outcome == 'success' && vars.ARB_ENABLED == 'true'
         continue-on-error: true
-        timeout-minutes: 3
+        timeout-minutes: 5
         working-directory: flash-kit
         run: npm ci --no-audit --no-fund && npm run -s scan
         env:
