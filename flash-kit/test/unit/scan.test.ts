@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { marketAuthority, type Reserve } from "../../src/sol/kamino";
-import { batchFor, rotation, MIDS, payoutTarget, pickMids, preflight, recordPass, sweepInstructions } from "../../src/sol/scan";
+import { batchFor, cycleOrder, HOT, rotation, MIDS, payoutTarget, pickMids, pickTargets, preflight, priorityFee, recordPass, sweepInstructions, type Target } from "../../src/sol/scan";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 
 const market = new PublicKey("7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF");
@@ -88,5 +88,47 @@ describe("scan preflight", () => {
     expect(order).toHaveLength(20);
     expect(order.slice(0, 8)).toEqual(batchFor(mids, 300_000));
     expect(new Set(order.map(([, m]) => m)).size).toBe(20);
+  });
+});
+
+describe("movers first", () => {
+  const tok = (symbol: string, id: string, m5: number, h1: number) => ({ id, symbol, isVerified: true, tokenProgram: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", liquidity: 1e6, usdPrice: 3, stats5m: { priceChange: m5 }, stats1h: { priceChange: h1 } });
+
+  it("scores |5m| + |1h|/4 and keeps the larger score for a token listed twice", () => {
+    const ts = pickTargets([[tok("A", "a1", -2, 4)], [tok("A", "a1", 0.5, 0), tok("B", "b1", 0, 0)]]);
+    expect(ts).toEqual([
+      { sym: "A", id: "a1", vol: 3 },
+      { sym: "B", id: "b1", vol: 0 },
+    ]);
+  });
+
+  it("puts the hottest movers in every cycle and rotates the rest", () => {
+    const targets: Target[] = Array.from({ length: 30 }, (_, i) => ({ sym: `T${i}`, id: `id${String(i).padStart(2, "0")}`, vol: i < 10 ? 10 - i : 0 }));
+    const c0 = cycleOrder(targets, 0, 0);
+    const c1 = cycleOrder(targets, 1, 0);
+    expect(c0.slice(0, HOT).map((t) => t.sym)).toEqual(["T0", "T1", "T2", "T3", "T4", "T5", "T6", "T7"]);
+    expect(c1.slice(0, HOT)).toEqual(c0.slice(0, HOT));
+    const rest0 = c0.slice(HOT).map((t) => t.id);
+    const rest1 = c1.slice(HOT).map((t) => t.id);
+    expect(rest0.length).toBeGreaterThan(0);
+    expect(rest0.some((id) => rest1.includes(id))).toBe(false);
+  });
+
+  it("never treats a still token as hot", () => {
+    const flat: Target[] = [{ sym: "X", id: "x", vol: 0 }];
+    expect(cycleOrder(flat, 0, 0)).toEqual(flat);
+  });
+});
+
+describe("priority fee", () => {
+  it("bids a quarter of the profit in SOL, spread over the compute units", () => {
+    // $0.40 profit at $200/SOL → $0.10 tip = 0.0005 SOL = 500,000 lamports
+    expect(priorityFee(0.4, 200, 500_000)).toEqual({ lamports: 500_000, microLamports: 1_000_000 });
+  });
+  it("caps the tip at 0.002 SOL", () => {
+    expect(priorityFee(100, 200, 1_000_000).lamports).toBe(2_000_000);
+  });
+  it("bids nothing on bad input", () => {
+    for (const [p, s, c] of [[0, 200, 1e5], [-1, 200, 1e5], [1, 0, 1e5], [1, 200, 0], [NaN, 200, 1e5]]) expect(priorityFee(p!, s!, c!)).toEqual({ lamports: 0, microLamports: 0 });
   });
 });
