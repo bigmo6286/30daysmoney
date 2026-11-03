@@ -17,17 +17,30 @@ export interface RoundTrip {
   worst: bigint;
 }
 
+/**
+ * Account caps per swap leg, largest first. Each leg is capped at the first; when the two legs plus
+ * the flash loan don't fit in one transaction, the route is re-quoted at the next, smaller cap
+ * (fewer hops, maybe a little less profit) instead of being dropped.
+ */
+export const MAX_ACCOUNTS = [24, 16, 12] as const;
+
+export class RouteTooLargeError extends Error {
+  constructor() {
+    super("the route is too large for one transaction; try a smaller --max-accounts or another token");
+  }
+}
+
 /** what the sell leg holds back from the quoted buy amount, in basis points */
 export const SELL_BUFFER_BPS = 3n;
 
-export async function quoteRoundTrip(jup: Jupiter, loanMint: string, mid: string, amount: bigint, fee: bigint, slippageBps: number, excludeDexes: string[] = []): Promise<RoundTrip | null> {
-  const buy = await jup.quote(loanMint, mid, amount, slippageBps, excludeDexes);
+export async function quoteRoundTrip(jup: Jupiter, loanMint: string, mid: string, amount: bigint, fee: bigint, slippageBps: number, excludeDexes: string[] = [], maxAccounts: number = MAX_ACCOUNTS[0]): Promise<RoundTrip | null> {
+  const buy = await jup.quote(loanMint, mid, amount, slippageBps, excludeDexes, maxAccounts);
   if (!buy) return null;
   // the sell leg spends what the buy leg is quoted to return, less a tiny buffer. (It used to sell
   // the slippage floor, `minOut`, which priced every round trip ~0.3% worse than it really is, so
   // no gap was ever seen.) If the buy comes in under this, the sell can't be paid and the whole
   // flash transaction fails in simulation, before anything is sent.
-  const sell = await jup.quote(mid, loanMint, buy.outAmount - (buy.outAmount * SELL_BUFFER_BPS) / 10_000n, slippageBps, excludeDexes);
+  const sell = await jup.quote(mid, loanMint, buy.outAmount - (buy.outAmount * SELL_BUFFER_BPS) / 10_000n, slippageBps, excludeDexes, maxAccounts);
   if (!sell) return null;
   return { amount, buy, sell, expected: sell.outAmount - amount - fee, worst: sell.minOut - amount - fee };
 }
@@ -49,7 +62,7 @@ export async function buildAndSimulate(conn: Connection, jup: Jupiter, r: Reserv
   try {
     size = tx.serialize().length;
   } catch {
-    throw new Error("the route is too large for one transaction; try a smaller --max-accounts or another token");
+    throw new RouteTooLargeError();
   }
   const sim = await simulateFlash(conn, tx, plan);
   return { tx, built: { ...sim, trip, txSize: size } as Built };
@@ -60,19 +73,31 @@ export const repayFailed = (b: Pick<Built, "logs" | "error">) => /insufficient f
 
 /**
  * Quote → build → simulate, re-quoting without a venue whenever a swap leg fails inside the flash
- * transaction (some market makers refuse to trade next to other programs). Up to `tries` routes.
+ * transaction (some market makers refuse to trade next to other programs), and with a smaller
+ * account cap whenever the route doesn't fit in one transaction. Up to `tries` venue retries.
  */
-export async function findRoute(conn: Connection, jup: Jupiter, r: Reserve, payer: PublicKey, mid: string, amount: bigint, fee: bigint, slippageBps: number, tries = 4) {
+export async function findRoute(conn: Connection, jup: Jupiter, r: Reserve, payer: PublicKey, mid: string, amount: bigint, fee: bigint, slippageBps: number, tries = 4, build: typeof buildAndSimulate = buildAndSimulate) {
   const excluded: string[] = [];
   let last: Awaited<ReturnType<typeof buildAndSimulate>> | null = null;
-  for (let i = 0; i < tries; i++) {
-    const trip = await quoteRoundTrip(jup, r.mint.toBase58(), mid, amount, fee, slippageBps, excluded);
+  let cap = 0;
+  for (let i = 0; i < tries; ) {
+    const trip = await quoteRoundTrip(jup, r.mint.toBase58(), mid, amount, fee, slippageBps, excluded, MAX_ACCOUNTS[cap]!);
     if (!trip) break;
-    last = await buildAndSimulate(conn, jup, r, payer, trip);
-    if (last.built.ok || repayFailed(last.built)) return { ...last, excluded };
+    try {
+      last = await build(conn, jup, r, payer, trip);
+    } catch (e) {
+      // too big at this cap: try a smaller one (doesn't use up a venue retry); out of caps, give up
+      if (e instanceof RouteTooLargeError && cap + 1 < MAX_ACCOUNTS.length) {
+        cap++;
+        continue;
+      }
+      throw e;
+    }
+    if (last.built.ok || repayFailed(last.built)) return { ...last, excluded, maxAccounts: MAX_ACCOUNTS[cap]! as number };
     excluded.push(...trip.buy.labels, ...trip.sell.labels);
+    i++;
   }
-  return last ? { ...last, excluded } : null;
+  return last ? { ...last, excluded, maxAccounts: MAX_ACCOUNTS[cap]! as number } : null;
 }
 
 export const fmtUnits = (raw: bigint, decimals: number) => {

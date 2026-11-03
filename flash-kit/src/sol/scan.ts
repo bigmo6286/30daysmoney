@@ -17,7 +17,7 @@ import { Connection, PublicKey, Transaction, type Keypair, type TransactionInstr
 import { createAssociatedTokenAccountIdempotentInstruction, createTransferCheckedInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { loadReserve, type Reserve } from "./kamino";
 import { Jupiter } from "./jupiter";
-import { buildAndSimulate, findRoute, fmtUnits, quoteRoundTrip } from "./arb";
+import { buildAndSimulate, findRoute, fmtUnits, MAX_ACCOUNTS, quoteRoundTrip } from "./arb";
 import { solanaRpc, solKeypair } from "./cli";
 
 /** Fallback when Jupiter's token list can't be read: liquid tokens that trade on several venues. */
@@ -348,6 +348,7 @@ export async function scanOnce(env: NodeJS.ProcessEnv = process.env): Promise<Pa
   const tryCandidate = async (j: Job, r: Reserve, amount: bigint, fee: bigint, label: string) => {
     const minRaw = j.loan === "SOL" ? BigInt(Math.ceil((minUsd / solUsd) * 1e9)) : BigInt(Math.round(minUsd * 1e6));
     const found = await findRoute(conn, jup, r, kp.publicKey, j.t.id, amount, fee, SLIPPAGE_BPS);
+    if (found && found.maxAccounts < MAX_ACCOUNTS[0]) label = `${label} (route cut to ${found.maxAccounts} accounts to fit)`;
     if (!found || !found.built.ok || found.built.delta! <= minRaw) {
       pass.notes.push(`${label}: ${found?.built.ok ? `simulated ${toUsd(found.built.delta!, j.loan).toFixed(3)} USD` : `simulation failed: ${found?.built.error ?? "no route"}`}`);
       return;
@@ -376,7 +377,7 @@ export async function scanOnce(env: NodeJS.ProcessEnv = process.env): Promise<Pa
     }
     const profit = netUsd.toFixed(4);
     pass.sent.push({ sig, profit, route });
-    await notify(`💰 Flash arb: +$${profit} (simulated, after a ${(tip.lamports / 1e9).toFixed(5)} SOL priority fee) via ${j.t.sym}, ${label.split(" ").slice(1).join(" ")} borrowed\n${route}\nhttps://solscan.io/tx/${sig}`, env);
+    await notify(`💰 Flash arb: +$${profit} (simulated, after a ${(tip.lamports / 1e9).toFixed(5)} SOL priority fee) via ${j.t.sym}, ${j.size} ${j.loan} borrowed\n${route}\nhttps://solscan.io/tx/${sig}`, env);
     await payOut(j.loan, "profit");
   };
 
