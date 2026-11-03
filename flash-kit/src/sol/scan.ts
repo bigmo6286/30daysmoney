@@ -128,10 +128,14 @@ export function batchFor(mids: Record<string, string>, now: number, size = BATCH
   return all.slice(i * size, i * size + size);
 }
 
-/** What to borrow: USDC and SOL see different pools (token/USDC vs token/SOL), so different gaps. */
+/**
+ * What to borrow: USDC and SOL see different pools (token/USDC vs token/SOL), so different gaps.
+ * One size each: Jupiter's free key allows about one quote a second, so every extra size halves how
+ * often each token is looked at. A gap that pays on a small loan usually pays more on a bigger one.
+ */
 const LOANS = [
-  { sym: "USDC", sizes: [300n, 2_000n] },
-  { sym: "SOL", sizes: [2n, 12n] },
+  { sym: "USDC", sizes: [2_000n] },
+  { sym: "SOL", sizes: [12n] },
 ] as const;
 /** price checks in flight at once (Jupiter's rate limit backs the rest off) */
 const DEFAULT_CONCURRENCY = 3;
