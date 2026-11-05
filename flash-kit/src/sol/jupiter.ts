@@ -23,7 +23,18 @@ interface RawIx {
   data: string;
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+export interface SwapIxs {
+  setup: TransactionInstruction[];
+  swap: TransactionInstruction;
+  cleanup: TransactionInstruction[];
+  /** only with `tokenLedger`: records the input account's balance; must run before the tokens arrive */
+  tokenLedger?: TransactionInstruction;
+  /** setup, swap, cleanup */
+  instructions: TransactionInstruction[];
+  lookupTables: AddressLookupTableAccount[];
+}
+
+const sleep =(ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export class Jupiter {
   private readonly base: string;
@@ -63,24 +74,31 @@ export class Jupiter {
     };
   }
 
-  /** The swap as instructions (setup, swap, cleanup) plus the lookup tables it needs; no compute-budget ixs (the flash tx sets its own). */
-  async instructions(conn: Connection, q: JupQuote, user: PublicKey): Promise<{ instructions: TransactionInstruction[]; lookupTables: AddressLookupTableAccount[] }> {
+  /**
+   * The swap as instructions (setup, swap, cleanup) plus the lookup tables it needs; no compute-budget
+   * ixs (the flash tx sets its own). With `tokenLedger`, the swap spends whatever its input account
+   * gained since `tokenLedger` (an instruction you place earlier) ran, instead of the quoted amount.
+   */
+  async instructions(conn: Connection, q: JupQuote, user: PublicKey, opts: { tokenLedger?: boolean } = {}): Promise<SwapIxs> {
     const r = await this.get(`${this.base}/swap-instructions`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ quoteResponse: q.raw, userPublicKey: user.toBase58(), wrapAndUnwrapSol: false, dynamicComputeUnitLimit: false }),
+      body: JSON.stringify({ quoteResponse: q.raw, userPublicKey: user.toBase58(), wrapAndUnwrapSol: false, dynamicComputeUnitLimit: false, ...(opts.tokenLedger ? { useTokenLedger: true } : {}) }),
     });
     if (!r.ok) throw new Error(`jupiter swap-instructions HTTP ${r.status}`);
-    const j = (await r.json()) as { setupInstructions?: RawIx[]; swapInstruction?: RawIx; cleanupInstruction?: RawIx | null; addressLookupTableAddresses?: string[]; error?: string };
+    const j = (await r.json()) as { tokenLedgerInstruction?: RawIx | null; setupInstructions?: RawIx[]; swapInstruction?: RawIx; cleanupInstruction?: RawIx | null; addressLookupTableAddresses?: string[]; error?: string };
     if (j.error || !j.swapInstruction) throw new Error(`jupiter: ${j.error ?? "no swap instruction"}`);
+    if (opts.tokenLedger && !j.tokenLedgerInstruction) throw new Error("jupiter: no token ledger instruction");
     const ix = (x: RawIx) =>
       new TransactionInstruction({ programId: new PublicKey(x.programId), keys: x.accounts.map((a) => ({ pubkey: new PublicKey(a.pubkey), isSigner: a.isSigner, isWritable: a.isWritable })), data: Buffer.from(x.data, "base64") });
-    const instructions = [...(j.setupInstructions ?? []).map(ix), ix(j.swapInstruction), ...(j.cleanupInstruction ? [ix(j.cleanupInstruction)] : [])];
+    const setup = (j.setupInstructions ?? []).map(ix);
+    const swap = ix(j.swapInstruction);
+    const cleanup = j.cleanupInstruction ? [ix(j.cleanupInstruction)] : [];
     const lookupTables: AddressLookupTableAccount[] = [];
     for (const a of j.addressLookupTableAddresses ?? []) {
       const t = (await conn.getAddressLookupTable(new PublicKey(a))).value;
       if (t) lookupTables.push(t);
     }
-    return { instructions, lookupTables };
+    return { setup, swap, cleanup, ...(j.tokenLedgerInstruction ? { tokenLedger: ix(j.tokenLedgerInstruction) } : {}), instructions: [...setup, swap, ...cleanup], lookupTables };
   }
 }

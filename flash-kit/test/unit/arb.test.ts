@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { Keypair } from "@solana/web3.js";
-import { findRoute, MAX_ACCOUNTS, RouteTooLargeError } from "../../src/sol/arb";
+import { Keypair, TransactionInstruction } from "@solana/web3.js";
+import { findRoute, MAX_ACCOUNTS, roundTripStrategy, RouteTooLargeError } from "../../src/sol/arb";
 
 const q = (out: bigint, maxAccounts: number) => ({ outAmount: out, minOut: out, labels: ["Venue"], route: "Venue", maxAccounts });
 /** a fake Jupiter that records the account cap of every quote */
@@ -50,5 +50,24 @@ describe("findRoute", () => {
       throw new Error("rpc down");
     }) as never;
     await expect(findRoute({} as never, jupiter([]), r, payer, "MID", 1_000_000n, 20n, 30, 4, build)).rejects.toThrow("rpc down");
+  });
+});
+
+describe("roundTripStrategy", () => {
+  const ix = (tag: string) => new TransactionInstruction({ programId: Keypair.generate().publicKey, keys: [], data: Buffer.from(tag) });
+  const legs = (ledger: boolean) => {
+    const buy = { setup: [ix("buy-setup")], swap: ix("buy-swap"), cleanup: [ix("buy-cleanup")], instructions: [], lookupTables: [] };
+    const sell = { setup: [ix("sell-setup")], swap: ix("sell-swap"), cleanup: [], ...(ledger ? { tokenLedger: ix("ledger") } : {}), instructions: [], lookupTables: [] };
+    return { buy, sell };
+  };
+
+  it("records the ledger after the buy's setup and before its swap, so the sell spends what the buy delivered", () => {
+    const { buy, sell } = legs(true);
+    expect(roundTripStrategy(buy, sell).map((i) => i.data.toString())).toEqual(["buy-setup", "ledger", "buy-swap", "buy-cleanup", "sell-setup", "sell-swap"]);
+  });
+
+  it("refuses a sell leg without a ledger (a fixed-size sell fails when the buy fills a little short)", () => {
+    const { buy, sell } = legs(false);
+    expect(() => roundTripStrategy(buy, sell)).toThrow(/token ledger/);
   });
 });
