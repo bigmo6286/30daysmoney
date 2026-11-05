@@ -17,7 +17,7 @@ import { Connection, PublicKey, Transaction, type Keypair, type TransactionInstr
 import { createAssociatedTokenAccountIdempotentInstruction, createTransferCheckedInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { loadReserve, type Reserve } from "./kamino";
 import { Jupiter } from "./jupiter";
-import { buildAndSimulate, findRoute, fmtUnits, MAX_ACCOUNTS, quoteRoundTrip } from "./arb";
+import { buildAndSimulate, failureNote, findRoute, fmtUnits, MAX_ACCOUNTS, quoteRoundTrip } from "./arb";
 import { solanaRpc, solKeypair } from "./cli";
 
 /** Fallback when Jupiter's token list can't be read: liquid tokens that trade on several venues. */
@@ -350,7 +350,8 @@ export async function scanOnce(env: NodeJS.ProcessEnv = process.env): Promise<Pa
     const found = await findRoute(conn, jup, r, kp.publicKey, j.t.id, amount, fee, SLIPPAGE_BPS);
     if (found && found.maxAccounts < MAX_ACCOUNTS[0]) label = `${label} (route cut to ${found.maxAccounts} accounts to fit)`;
     if (!found || !found.built.ok || found.built.delta! <= minRaw) {
-      pass.notes.push(`${label}: ${found?.built.ok ? `simulated ${toUsd(found.built.delta!, j.loan).toFixed(3)} USD` : `simulation failed: ${found?.built.error ?? "no route"}`}`);
+      const units = (raw: bigint) => `${fmtUnits(raw, r.decimals)} ${j.loan}`;
+      pass.notes.push(`${label}: ${found?.built.ok ? `simulated ${toUsd(found.built.delta!, j.loan).toFixed(3)} USD` : found ? `simulation ${failureNote(found.built, fee, units)}` : "simulation failed: no route"}`);
       return;
     }
     // pay a share of the profit as a priority fee, with a compute limit fitted to the simulation
@@ -360,7 +361,7 @@ export async function scanOnce(env: NodeJS.ProcessEnv = process.env): Promise<Pa
     const final = tip.microLamports ? await buildAndSimulate(conn, jup, r, kp.publicKey, found.built.trip, { priorityMicroLamports: tip.microLamports, computeUnits: cu }) : found;
     const netUsd = toUsd(final.built.delta ?? 0n, j.loan) - (tip.lamports / 1e9) * solUsd;
     if (!final.built.ok || netUsd <= minUsd) {
-      pass.notes.push(`${label}: profitable at first, not after the priority fee (${final.built.ok ? `net ${netUsd.toFixed(3)} USD` : final.built.error})`);
+      pass.notes.push(`${label}: profitable at first, not after the priority fee (${final.built.ok ? `net ${netUsd.toFixed(3)} USD` : failureNote(final.built, fee, (raw) => `${fmtUnits(raw, r.decimals)} ${j.loan}`)})`);
       return;
     }
     const route = `${final.built.trip.buy.route} → ${final.built.trip.sell.route}`;

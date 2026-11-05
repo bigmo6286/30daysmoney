@@ -3,8 +3,8 @@
  * through Jupiter, repay. Quotes first; only a route whose quoted return beats the loan + fee +
  * your floor is built, and every built route is simulated before anything could be sent.
  */
-import type { Connection, PublicKey, TransactionInstruction } from "@solana/web3.js";
-import { flashTransaction, simulateFlash, type Reserve, type SimResult } from "./kamino";
+import { PACKET_DATA_SIZE, type Connection, type PublicKey, type TransactionInstruction } from "@solana/web3.js";
+import { FLASH_BORROW_INDEX, flashTransaction, simulateFlash, type Reserve, type SimResult } from "./kamino";
 import type { Jupiter, JupQuote, SwapIxs } from "./jupiter";
 
 export interface RoundTrip {
@@ -48,6 +48,32 @@ export async function quoteRoundTrip(jup: Jupiter, loanMint: string, mid: string
 export interface Built extends SimResult {
   trip: RoundTrip;
   txSize: number;
+  /** on failure: which step failed */
+  stage?: Stage;
+}
+
+export type Stage = "setup" | "borrow" | "buy" | "sell" | "repay";
+
+/**
+ * Which step an instruction index belongs to, in a flash transaction laid out as: setup ixs, the
+ * borrow at `borrowIndex`, `buyLen` buy-side ixs (setup, ledger, swap, cleanup), the sell-side ixs,
+ * then the repay as the last of `total`.
+ */
+export function stageOf(ix: number, borrowIndex: number, buyLen: number, total: number): Stage {
+  if (ix < borrowIndex) return "setup";
+  if (ix === borrowIndex) return "borrow";
+  if (ix >= total - 1) return "repay";
+  return ix <= borrowIndex + buyLen ? "buy" : "sell";
+}
+
+/** A failed simulation in a few words: which step, and at the repay how far short the swaps came back. */
+export function failureNote(b: Pick<Built, "error" | "stage" | "returned" | "trip">, fee: bigint, toUnits: (raw: bigint) => string): string {
+  const where = b.stage ? ` at ${b.stage}` : "";
+  if (b.stage === "repay" && b.returned !== undefined) {
+    const net = b.returned - b.trip.amount - fee;
+    return `failed${where}: swaps returned ${toUnits(b.returned)} of ${toUnits(b.trip.amount + fee)} owed (${net >= 0n ? "+" : "−"}${toUnits(net < 0n ? -net : net)})`;
+  }
+  return `failed${where}: ${b.error ?? "unknown error"}`;
 }
 
 /**
@@ -76,8 +102,13 @@ export async function buildAndSimulate(conn: Connection, jup: Jupiter, r: Reserv
   } catch {
     throw new RouteTooLargeError();
   }
+  // serialize() can succeed past Solana's packet limit; the RPC then refuses it ("too large: 1696
+  // bytes (max: encoded/raw 1644/1232)"), which used to skip the smaller-cap retry
+  if (size > PACKET_DATA_SIZE) throw new RouteTooLargeError();
   const sim = await simulateFlash(conn, tx, plan);
-  return { tx, built: { ...sim, trip, txSize: size } as Built };
+  const buyLen = a.setup.length + 1 + 1 + a.cleanup.length; // setup, the sell's ledger, swap, cleanup
+  const stage = sim.failedIx !== undefined ? stageOf(sim.failedIx, FLASH_BORROW_INDEX, buyLen, tx.message.compiledInstructions.length) : undefined;
+  return { tx, built: { ...sim, trip, txSize: size, ...(stage ? { stage } : {}) } as Built };
 }
 
 /** klend's own failure (the repay couldn't be paid) vs. a swap venue refusing or failing */

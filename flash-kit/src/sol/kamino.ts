@@ -117,6 +117,9 @@ export interface FlashPlan {
   priorityMicroLamports?: number;
 }
 
+/** where the borrow sits in `flashInstructions`: after the two compute-budget ixs and the token-account create */
+export const FLASH_BORROW_INDEX = 3;
+
 /** compute budget, the payer's token account (created if missing), borrow, strategy, repay */
 export function flashInstructions(p: FlashPlan): TransactionInstruction[] {
   const head = [
@@ -124,7 +127,7 @@ export function flashInstructions(p: FlashPlan): TransactionInstruction[] {
     ComputeBudgetProgram.setComputeUnitPrice({ microLamports: p.priorityMicroLamports ?? 0 }),
     createAssociatedTokenAccountIdempotentInstruction(p.payer, getAssociatedTokenAddressSync(p.reserve.mint, p.payer, true, p.reserve.tokenProgram), p.payer, p.reserve.mint, p.reserve.tokenProgram),
   ];
-  const borrowIndex = head.length;
+  const borrowIndex = head.length; // = FLASH_BORROW_INDEX
   return [...head, flashBorrowIx(p.reserve, p.payer, p.amount), ...p.strategy, flashRepayIx(p.reserve, p.payer, p.amount, borrowIndex)];
 }
 
@@ -141,16 +144,41 @@ export interface SimResult {
   units?: number;
   /** change in the payer's balance of the loan token (raw), after repaying: the profit, or minus the fee */
   delta?: bigint;
+  /** on failure: the index of the instruction that failed (the repay is the last one) */
+  failedIx?: number;
+  /** on failure: how much of the loan token the strategy put back in the payer's account (raw) before the repay */
+  returned?: bigint;
+}
+
+/** Sum of token transfers into `account` made inside the top-level instructions `from` < index < `to`. */
+export function transfersInto(inner: { index: number; instructions: unknown[] }[], account: string, from: number, to: number): bigint {
+  let sum = 0n;
+  for (const g of inner) {
+    if (g.index <= from || g.index >= to) continue;
+    for (const ix of g.instructions as { parsed?: { type?: string; info?: { destination?: string; amount?: string; tokenAmount?: { amount?: string } } } }[]) {
+      const info = ix.parsed?.info;
+      if (info?.destination === account && /^transfer/.test(ix.parsed?.type ?? "")) sum += BigInt(info.amount ?? info.tokenAmount?.amount ?? 0);
+    }
+  }
+  return sum;
 }
 
 /** Simulate as the payer without a signature: shows exactly what the transaction would do now. */
 export async function simulateFlash(conn: Connection, tx: VersionedTransaction, p: Pick<FlashPlan, "payer" | "reserve">): Promise<SimResult> {
   const ata = getAssociatedTokenAddressSync(p.reserve.mint, p.payer, true, p.reserve.tokenProgram);
   const before = await conn.getTokenAccountBalance(ata).then((b) => BigInt(b.value.amount)).catch(() => 0n);
-  const sim = await conn.simulateTransaction(tx, { sigVerify: false, replaceRecentBlockhash: true, commitment: "confirmed", accounts: { encoding: "base64", addresses: [ata.toBase58()] } });
+  const sim = await conn.simulateTransaction(tx, { sigVerify: false, replaceRecentBlockhash: true, commitment: "confirmed", innerInstructions: true, accounts: { encoding: "base64", addresses: [ata.toBase58()] } });
   const v = sim.value;
   const logs = v.logs ?? [];
-  if (v.err) return { ok: false, error: explain(v.err, logs), logs, units: v.unitsConsumed };
+  if (v.err) {
+    const e = v.err as { InstructionError?: [number, unknown] };
+    const failedIx = Array.isArray(e.InstructionError) ? e.InstructionError[0] : undefined;
+    const last = tx.message.compiledInstructions.length - 1;
+    // between the borrow and the repay: what the swaps brought back (only meaningful if they all ran)
+    const inner = (v as { innerInstructions?: { index: number; instructions: unknown[] }[] | null }).innerInstructions ?? [];
+    const returned = failedIx === last ? before + transfersInto(inner, ata.toBase58(), FLASH_BORROW_INDEX, last) : undefined;
+    return { ok: false, error: explain(v.err, logs), logs, units: v.unitsConsumed, ...(failedIx !== undefined ? { failedIx } : {}), ...(returned !== undefined ? { returned } : {}) };
+  }
   const acc = v.accounts?.[0];
   const after = acc ? Buffer.from(acc.data[0] ?? "", "base64").readBigUInt64LE(64) : 0n;
   return { ok: true, logs, units: v.unitsConsumed, delta: after - before };
