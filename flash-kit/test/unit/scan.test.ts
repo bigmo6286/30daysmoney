@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { marketAuthority, type Reserve } from "../../src/sol/kamino";
-import { batchFor, cycleOrder, HOT, rotation, MIDS, payoutTarget, pickMids, pickTargets, preflight, priorityFee, recordPass, sweepInstructions, type Target } from "../../src/sol/scan";
+import { batchFor, coolKey, cooling, COOLDOWN_MS, cycleOrder, FAIL_WINDOW_MS, HOT, pruneCooldowns, recordFailure, type Cooldowns, rotation, MIDS, payoutTarget, pickMids, pickTargets, preflight, priorityFee, recordPass, sweepInstructions, type Target } from "../../src/sol/scan";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 
 const market = new PublicKey("7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF");
@@ -130,5 +130,28 @@ describe("priority fee", () => {
   });
   it("bids nothing on bad input", () => {
     for (const [p, s, c] of [[0, 200, 1e5], [-1, 200, 1e5], [1, 0, 1e5], [1, 200, 0], [NaN, 200, 1e5]]) expect(priorityFee(p!, s!, c!)).toEqual({ lamports: 0, microLamports: 0 });
+  });
+});
+
+describe("cooldowns", () => {
+  const k = coolKey("mintZEC", "USDC");
+  it("pauses a token + loan after two losing simulations, for three hours", () => {
+    const c: Cooldowns = {};
+    expect(recordFailure(c, k, 1_000)).toBe(false);
+    expect(cooling(c, k, 1_001)).toBe(false);
+    expect(recordFailure(c, k, 2_000)).toBe(true);
+    expect(cooling(c, k, 2_001)).toBe(true);
+    expect(cooling(c, k, 2_000 + COOLDOWN_MS)).toBe(false);
+    expect(cooling(c, coolKey("mintZEC", "SOL"), 2_001)).toBe(false);
+  });
+  it("forgets failures older than the window", () => {
+    const c: Cooldowns = {};
+    recordFailure(c, k, 0);
+    expect(recordFailure(c, k, FAIL_WINDOW_MS + 1)).toBe(false);
+  });
+  it("prunes what no longer matters and survives a bad entry", () => {
+    const c = { [k]: { fails: [], until: 10 }, b: { fails: [5] }, d: {} as never } as Cooldowns;
+    expect(pruneCooldowns(c, 11)).toEqual({ b: { fails: [5] } });
+    expect(pruneCooldowns(c, 9)).toEqual({ [k]: { fails: [], until: 10 }, b: { fails: [5] } });
   });
 });
