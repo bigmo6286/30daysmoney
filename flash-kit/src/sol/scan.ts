@@ -217,6 +217,61 @@ function saveStats(file: string, p: Pass, now: number) {
   fs.writeFileSync(file, JSON.stringify(recordPass(days, p, now), null, 1));
 }
 
+/**
+ * A token + loan whose quotes keep showing a profit that the simulation never finds (ZEC was 64 of
+ * 100 failed candidates over two days, each about 32 bps short) is skipped for a while, so its
+ * Jupiter calls go to other tokens. Kept next to the stats file, in the shop's encrypted state.
+ */
+export const COOLDOWN_AFTER = 2;
+export const COOLDOWN_MS = 3 * 3_600_000;
+/** failed simulations older than this don't count toward a cooldown */
+export const FAIL_WINDOW_MS = 6 * 3_600_000;
+export interface Cool {
+  /** times of recent failed simulations */
+  fails: number[];
+  /** skipped until then */
+  until?: number;
+}
+export type Cooldowns = Record<string, Cool>;
+
+export const coolKey = (mint: string, loan: string) => `${mint}:${loan}`;
+export const cooling = (c: Cooldowns, key: string, now: number) => (c[key]?.until ?? 0) > now;
+
+/** Count a failed simulation; true when it starts a cooldown. */
+export function recordFailure(c: Cooldowns, key: string, now: number): boolean {
+  const e: Cool = c[key] ?? { fails: [] };
+  e.fails = [...e.fails.filter((t) => now - t < FAIL_WINDOW_MS), now];
+  c[key] = e;
+  if (e.fails.length < COOLDOWN_AFTER) return false;
+  e.until = now + COOLDOWN_MS;
+  e.fails = [];
+  return true;
+}
+
+/** Drop entries with nothing left to remember. */
+export function pruneCooldowns(c: Cooldowns, now: number): Cooldowns {
+  const out: Cooldowns = {};
+  for (const [k, e] of Object.entries(c)) {
+    const fails = (e.fails ?? []).filter((t) => now - t < FAIL_WINDOW_MS);
+    if (fails.length || (e.until ?? 0) > now) out[k] = { fails, ...((e.until ?? 0) > now ? { until: e.until } : {}) };
+  }
+  return out;
+}
+
+const cooldownFile = (env: NodeJS.ProcessEnv) => {
+  const stats = (env.ARB_STATS_FILE || "").trim();
+  return stats ? path.join(path.dirname(stats), "arb-cooldown.json") : "";
+};
+
+function loadCooldowns(file: string, now: number): Cooldowns {
+  if (!file) return {};
+  try {
+    return pruneCooldowns(JSON.parse(fs.readFileSync(file, "utf8")) as Cooldowns, now);
+  } catch {
+    return {};
+  }
+}
+
 async function notify(text: string, env: NodeJS.ProcessEnv) {
   const token = (env.SHOP_TG_TOKEN || "").trim();
   const chat = (env.TG_OWNER_ID || "").trim();
@@ -324,34 +379,45 @@ export async function scanOnce(env: NodeJS.ProcessEnv = process.env): Promise<Pa
   pass.sol = (await conn.getBalance(kp.publicKey).catch(() => NaN)) / 1e9;
 
   const targets = await fetchTargets(env);
+  const coolFile = cooldownFile(env);
+  const cools = loadCooldowns(coolFile, started);
+  const paused = targets.flatMap((t) => LOANS.filter((l) => cooling(cools, coolKey(t.id, l.sym), started)).map((l) => `${t.sym} ${l.sym}`));
   const hot = cycleOrder(targets, 0, started).slice(0, HOT);
-  pass.notes.push(`batch: ${cycleOrder(targets, 0, started).map((t) => t.sym).join(", ")} (of ${targets.length}; movers first: ${hot.map((t) => `${t.sym} ${t.vol.toFixed(1)}%`).join(", ") || "none"})`);
+  pass.notes.push(`batch: ${cycleOrder(targets, 0, started).map((t) => t.sym).join(", ")} (of ${targets.length}; movers first: ${hot.map((t) => `${t.sym} ${t.vol.toFixed(1)}%`).join(", ") || "none"}${paused.length ? `; paused: ${paused.join(", ")}` : ""})`);
   const minUsd = Number(env.ARB_MIN_PROFIT || "0.05");
   const loans = LOANS.filter((l) => l.sym === "USDC" || solUsd > 0);
 
-  // the work: every (token, loan, size) of a cycle, cycle after cycle, until the time budget is used
+  // the work: every (token, loan, size) of a cycle, cycle after cycle, until the time budget is used;
+  // a token + loan on cooldown is left out
   type Job = { t: Target; loan: string; size: bigint };
   let cycle = 0;
   let queue: Job[] = [];
   const next = (): Job | null => {
-    if (Date.now() - started > BUDGET_MS) return null;
-    if (!queue.length) {
-      queue = cycleOrder(targets, cycle++, started).flatMap((t) => loans.flatMap((l) => l.sizes.map((size) => ({ t, loan: l.sym, size }))));
-      if (!queue.length) return null;
+    for (let tries = 0; !queue.length; tries++) {
+      if (Date.now() - started > BUDGET_MS || tries > 50) return null;
+      queue = cycleOrder(targets, cycle++, started).flatMap((t) => loans.filter((l) => !cooling(cools, coolKey(t.id, l.sym), Date.now())).flatMap((l) => l.sizes.map((size) => ({ t, loan: l.sym, size }))));
     }
+    if (Date.now() - started > BUDGET_MS) return null;
     return queue.shift()!;
+  };
+  /** a simulated candidate that wasn't sent: counts toward its cooldown */
+  const failed = (j: Job, label: string) => {
+    if (recordFailure(cools, coolKey(j.t.id, j.loan), Date.now())) pass.notes.push(`${label}: paused for ${COOLDOWN_MS / 3_600_000}h after ${COOLDOWN_AFTER} losing simulations`);
   };
   // building, simulating and sending happen one at a time: one wallet, one set of token accounts
   let lock: Promise<void> = Promise.resolve();
   const exclusive = (f: () => Promise<void>) => (lock = lock.then(f, f));
 
-  const tryCandidate = async (j: Job, r: Reserve, amount: bigint, fee: bigint, label: string) => {
+  const tryCandidate = async (j: Job, r: Reserve, amount: bigint, fee: bigint, label: string, quotedUsd: number) => {
     const minRaw = j.loan === "SOL" ? BigInt(Math.ceil((minUsd / solUsd) * 1e9)) : BigInt(Math.round(minUsd * 1e6));
     const found = await findRoute(conn, jup, r, kp.publicKey, j.t.id, amount, fee, SLIPPAGE_BPS);
     if (found && found.maxAccounts < MAX_ACCOUNTS[0]) label = `${label} (route cut to ${found.maxAccounts} accounts to fit)`;
+    // what the quote promised, next to what the simulation found: how far off the quotes run
+    const quoted = `; quoted ${quotedUsd >= 0 ? "+" : ""}${quotedUsd.toFixed(3)} USD`;
     if (!found || !found.built.ok || found.built.delta! <= minRaw) {
       const units = (raw: bigint) => `${fmtUnits(raw, r.decimals)} ${j.loan}`;
-      pass.notes.push(`${label}: ${found?.built.ok ? `simulated ${toUsd(found.built.delta!, j.loan).toFixed(3)} USD` : found ? `simulation ${failureNote(found.built, fee, units)}` : "simulation failed: no route"}`);
+      pass.notes.push(`${label}: ${found?.built.ok ? `simulated ${toUsd(found.built.delta!, j.loan).toFixed(3)} USD` : found ? `simulation ${failureNote(found.built, fee, units)}` : "simulation failed: no route"}${quoted}`);
+      if (found) failed(j, label);
       return;
     }
     // pay a share of the profit as a priority fee, with a compute limit fitted to the simulation
@@ -361,7 +427,8 @@ export async function scanOnce(env: NodeJS.ProcessEnv = process.env): Promise<Pa
     const final = tip.microLamports ? await buildAndSimulate(conn, jup, r, kp.publicKey, found.built.trip, { priorityMicroLamports: tip.microLamports, computeUnits: cu }) : found;
     const netUsd = toUsd(final.built.delta ?? 0n, j.loan) - (tip.lamports / 1e9) * solUsd;
     if (!final.built.ok || netUsd <= minUsd) {
-      pass.notes.push(`${label}: profitable at first, not after the priority fee (${final.built.ok ? `net ${netUsd.toFixed(3)} USD` : failureNote(final.built, fee, (raw) => `${fmtUnits(raw, r.decimals)} ${j.loan}`)})`);
+      pass.notes.push(`${label}: profitable at first, not after the priority fee (${final.built.ok ? `net ${netUsd.toFixed(3)} USD` : failureNote(final.built, fee, (raw) => `${fmtUnits(raw, r.decimals)} ${j.loan}`)})${quoted}`);
+      failed(j, label);
       return;
     }
     const route = `${final.built.trip.buy.route} → ${final.built.trip.sell.route}`;
@@ -397,7 +464,7 @@ export async function scanOnce(env: NodeJS.ProcessEnv = process.env): Promise<Pa
         if (!(usd > minUsd)) continue;
         pass.candidates++;
         const job = j;
-        await exclusive(() => tryCandidate(job, r, amount, fee, label).catch((e) => void pass.notes.push(`${label}: ${(e as Error).message.slice(0, 160)}`)));
+        await exclusive(() => tryCandidate(job, r, amount, fee, label, usd).catch((e) => void pass.notes.push(`${label}: ${(e as Error).message.slice(0, 160)}`)));
       } catch (e) {
         pass.notes.push(`${label}: ${(e as Error).message.slice(0, 160)}`);
       }
@@ -406,6 +473,14 @@ export async function scanOnce(env: NodeJS.ProcessEnv = process.env): Promise<Pa
   const n = Math.max(1, Math.min(6, Number(env.ARB_CONCURRENCY || DEFAULT_CONCURRENCY) || DEFAULT_CONCURRENCY));
   await Promise.all(Array.from({ length: n }, worker));
   await lock;
+  if (coolFile) {
+    try {
+      fs.mkdirSync(path.dirname(coolFile), { recursive: true });
+      fs.writeFileSync(coolFile, JSON.stringify(pruneCooldowns(cools, Date.now())));
+    } catch (e) {
+      pass.notes.push(`couldn't save cooldowns: ${(e as Error).message.slice(0, 120)}`);
+    }
+  }
   if (!loans.some((l) => l.sym === "SOL")) pass.notes.push("SOL loans skipped this pass: couldn't price SOL");
   return pass;
 }
