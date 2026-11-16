@@ -16,6 +16,9 @@ import { Watches } from "./watches";
 import { botProfile, sellable, Shop, type Button, type Reply, type Update } from "./shop";
 import { logger } from "./log";
 import { retry } from "./retry";
+import { pollWithFallback, PUBLIC_RPC, redact } from "./watch/fallback";
+
+const warnRpc = (chain: string) => (url: string, err: unknown) => log.warn(`${chain} poll failed on ${redact(url)}: ${err instanceof Error ? err.message : err}`);
 
 const log = logger("tick");
 
@@ -122,17 +125,19 @@ async function main() {
     for (const r of aff.replies) await tg.send(r).catch((err) => log.warn(`affiliate ${paid.id}: ${err.message}`));
     await owner(`💸 Sale: ${paid.product} · ${fmtUsdc(paid.amountMicro)} USDC on ${paid.chain}${paid.paid!.late ? " (paid after expiry)" : ""}\norder ${paid.id} · ${paid.contact}${paid.ref ? ` · via ${paid.ref}` : ""}\ntx ${paid.paid!.txid}${aff.ownerNote ? `\n${aff.ownerNote}` : ""}`);
   };
+  // the configured RPC first, the public one if that fails (e.g. Alchemy's monthly cap)
   const watchers = [
-    ["solana", cfg.solReceiver ? new SolanaWatcher(cfg.solRpc, cfg.solReceiver, st.solana ?? {}) : null],
-    ["base", cfg.baseReceiver ? new BaseWatcher(cfg.baseRpc, cfg.baseReceiver, st.base ?? {}) : null],
+    ["solana", cfg.solReceiver ? () => pollWithFallback([cfg.solRpc, ...PUBLIC_RPC.solana], (url) => new SolanaWatcher(url, cfg.solReceiver!, st.solana ?? {}), warnRpc("solana")) : null],
+    ["base", cfg.baseReceiver ? () => pollWithFallback([cfg.baseRpc, ...PUBLIC_RPC.base], (url) => new BaseWatcher(url, cfg.baseReceiver!, st.base ?? {}), warnRpc("base")) : null],
   ] as const;
-  for (const [name, w] of watchers) {
-    if (!w) continue;
+  for (const [name, poll] of watchers) {
+    if (!poll) continue;
     let transfers: Transfer[] = [];
+    let state: object;
     try {
-      transfers = await w.poll();
+      ({ transfers, state } = await poll());
     } catch (err) {
-      log.warn(`${name} poll failed: ${err instanceof Error ? err.message : err}`);
+      log.warn(`${name} poll failed on every RPC: ${err instanceof Error ? err.message : err}`);
       continue;
     }
     for (const t of transfers) {
@@ -143,7 +148,7 @@ async function main() {
         await owner(`❓ Unmatched ${fmtUsdc(t.amountMicro)} USDC on ${t.chain} from ${t.from}\ntx ${t.txid}`);
       }
     }
-    save({ [name]: w.state });
+    save({ [name]: state });
   }
   book.expire();
 
