@@ -15,6 +15,7 @@ import { readJson, writeJsonAtomic } from "./store";
 import { Watches } from "./watches";
 import { botProfile, sellable, Shop, type Button, type Reply, type Update } from "./shop";
 import { logger } from "./log";
+import { retry } from "./retry";
 
 const log = logger("tick");
 
@@ -88,7 +89,15 @@ async function main() {
     }
   }
 
-  const updates = await tg.call<Update[]>("getUpdates", { offset: st.tgOffset ?? 0, timeout: 0, allowed_updates: ["message", "callback_query"] });
+  // a Telegram blip ("fetch failed", about 1% of runs) used to end the pass here, before payments
+  // were checked: retry, and if it's still down, skip the messages (they wait for the next pass) and
+  // check payments anyway. A key that can't be DMed now is kept on the order and shown by /status.
+  let updates: Update[] = [];
+  try {
+    updates = await retry(() => tg.call<Update[]>("getUpdates", { offset: st.tgOffset ?? 0, timeout: 0, allowed_updates: ["message", "callback_query"] }));
+  } catch (err) {
+    log.warn(`telegram unreachable, messages wait for the next pass: ${err instanceof Error ? err.message : err}`);
+  }
   for (const u of updates) {
     try {
       const { replies, answerCallback } = shop.handle(u);
